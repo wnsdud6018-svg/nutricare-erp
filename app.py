@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------
-# 0. 보안 로그인 시스템 및 권한 정의 (RBAC)
+# 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 비밀번호 저장)
 # ---------------------------------------------------------
 USER_DB = {
     "nutrition": {"name": "영양실 (영양사)", "password": "1234", "role": "NUTRITION"},
@@ -20,17 +20,35 @@ def login_screen():
     st.markdown("<h4 style='text-align: center; color: gray;'>NutriCare ERP 보안 로그인</h4>", unsafe_allow_html=True)
     st.write("")
     
+    # 쿠키/세션 기반 저장 값 기본 세팅
+    saved_user = st.session_state.get("saved_username", "")
+    saved_pw = st.session_state.get("saved_password", "")
+    saved_remember = st.session_state.get("saved_remember", False)
+
     col_c1, col_c2, col_c3 = st.columns([1, 2, 1])
     with col_c2:
         with st.form("login_form"):
-            username = st.text_input("👤 아이디 (nutrition / daycare / admin)", key="user_id")
-            password = st.text_input("🔒 비밀번호", type="password", key="user_pw")
+            username = st.text_input("👤 아이디", value=saved_user, key="user_id")
+            password = st.text_input("🔒 비밀번호", value=saved_pw, type="password", key="user_pw")
+            remember_me = st.checkbox("☑️ 아이디 및 비밀번호 기억하기 (자동 입력)", value=saved_remember)
+            
             submit_login = st.form_submit_button("로그인", type="primary", use_container_width=True)
             
             if submit_login:
                 if username in USER_DB and USER_DB[username]["password"] == password:
                     st.session_state["logged_in"] = True
                     st.session_state["user_info"] = USER_DB[username]
+                    
+                    # 기억하기 상태 저장
+                    if remember_me:
+                        st.session_state["saved_username"] = username
+                        st.session_state["saved_password"] = password
+                        st.session_state["saved_remember"] = True
+                    else:
+                        st.session_state["saved_username"] = ""
+                        st.session_state["saved_password"] = ""
+                        st.session_state["saved_remember"] = False
+                        
                     st.success(f"🎉 환영합니다, {USER_DB[username]['name']}님!")
                     st.rerun()
                 else:
@@ -315,7 +333,7 @@ else:
 
     st.sidebar.markdown("---")
 
-    # 권한별 메뉴 필터링 (RBAC)
+    # 권한별 메뉴 필터링
     if role == "DAYCARE":
         menu_options = [
             "1. 대시보드 (홈)",
