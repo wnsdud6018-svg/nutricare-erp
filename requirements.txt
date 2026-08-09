@@ -1,4 +1,6 @@
 streamlit
 pandas
-openpyxl
+sqlalchemy
+psycopg2-binary
 Pillow
+openpyxl
