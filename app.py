@@ -317,10 +317,8 @@ def generate_card_image(floor, name, meal_type, side_type, kimchi_type):
 # ---------------------------------------------------------
 st.set_page_config(page_title="연세 효성 NutriCare ERP", layout="wide")
 
-# 사이드바 박스형 대형 메뉴 CSS 주입
 st.markdown("""
 <style>
-/* 사이드바 메뉴 제목 폰트 확대 */
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
     font-size: 21px !important;
     font-weight: 800 !important;
@@ -328,7 +326,6 @@ st.markdown("""
     margin-bottom: 8px !important;
 }
 
-/* 라디오 버튼의 동그라미 감추기 및 큼직한 박스 터치 버튼화 */
 [data-testid="stSidebar"] div[role="radiogroup"] > label {
     background-color: #ffffff !important;
     border: 2px solid #e5e7eb !important;
@@ -340,12 +337,10 @@ st.markdown("""
     transition: all 0.2s ease-in-out !important;
 }
 
-/* 라디오 동그라미 아이콘 숨기기 */
 [data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
     display: none !important;
 }
 
-/* 메뉴 텍스트 폰트 대폭 확대 및 시인성 강화 */
 [data-testid="stSidebar"] div[role="radiogroup"] > label [data-testid="stMarkdownContainer"] p {
     font-size: 18px !important;
     font-weight: 700 !important;
@@ -354,7 +349,6 @@ st.markdown("""
     margin: 0 !important;
 }
 
-/* 선택된 메뉴 박스 하이라이트 (파란색 박스 & 테두리 강조) */
 [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
     background-color: #eff6ff !important;
     border-color: #2563eb !important;
@@ -367,7 +361,6 @@ st.markdown("""
     font-weight: 900 !important;
 }
 
-/* 마우스 호버 효과 */
 [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
     border-color: #3b82f6 !important;
     background-color: #f8fafc !important;
@@ -389,7 +382,6 @@ else:
 
     st.sidebar.markdown("---")
 
-    # 권한별 메뉴 필터링
     if role == "DAYCARE":
         menu_options = [
             "1. 대시보드 (홈)",
@@ -428,7 +420,6 @@ else:
         use_container_width=True
     )
 
-    # [메뉴 1] 대시보드
     if menu == "1. 대시보드 (홈)":
         st.title("📌 당일 배식 & 영양 관리 현황판")
         st.caption(f"연세노인전문요양원 효성점 | 접속자: {user['name']}")
@@ -462,7 +453,6 @@ else:
         combined_df = pd.concat([df_res[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], daycare_formatted], ignore_index=True)
         st.dataframe(combined_df, use_container_width=True)
 
-    # [메뉴 2] 요양원 어르신 식이 관리
     elif menu == "2. 요양원 어르신 식이 관리":
         st.title("👵 요양원 입소 어르신 식이 형태 관리 (DB 저장)")
         st.caption("어르신 신규 등록, 식이 정보 수정, 퇴소 어르신 영구 삭제를 진행합니다.")
@@ -554,7 +544,6 @@ else:
         st.subheader("📑 전체 입소 어르신 명단")
         st.dataframe(df_res[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
 
-    # [메뉴 3] 4층 주간보호 출석부
     elif menu == "3. [4층 주간보호] 날짜별 출석부 & 식사 등록":
         st.title("🚌 4층 주간보호 센터 날짜별 출석부 & 식사 체크 (오전 10시 입력)")
         st.caption("달력으로 일자를 지정하여 [출석], [중식], [석식], [익일 조식] 식수를 체크하고 확정합니다.")
@@ -588,30 +577,17 @@ else:
         with tab_dc1:
             st.subheader(f"📝 [{target_date_str}] 주간보호 출석 및 식사 체크")
             
-            if st.button("✅ 체크 확인 및 저장 완료 (상단 1클릭 저장)", type="primary", use_container_width=True, key="save_top"):
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                for idx, row in edited_attendance.iterrows():
-                    cursor.execute("""
-                        UPDATE daycare_daily_attendance 
-                        SET attended=?, lunch_requested=?, dinner_requested=?, next_breakfast_requested=?, meal=?, side=?, kimchi=?, note=?
-                        WHERE id=?
-                    """, (int(row["출석여부"]), int(row["중식"]), int(row["석식"]), int(row["익일조식"]), row["주식"], row["부식"], row["김치"], row["특이사항"], int(row["id"])))
-                conn.commit()
-                conn.close()
-                st.balloons()
-                st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 저장되었습니다.)")
-
-            st.write("")
+            # 1) 표(Data Editor)를 먼저 선언
             edited_attendance = st.data_editor(
                 df_attendance[["id", "성함", "출석여부", "중식", "석식", "익일조식", "주식", "부식", "김치", "특이사항"]],
                 num_rows="dynamic",
                 use_container_width=True,
                 key=f"editor_{target_date_str}"
             )
-            
+
             st.write("")
-            if st.button("✅ 체크 확인 및 저장 완료 (하단 저장 확정)", type="primary", use_container_width=True, key="save_bottom"):
+            # 2) 저장 버튼을 표 아래 배치하여 NameError 완벽 방지
+            if st.button("✅ 체크 확인 및 저장 완료 (1클릭 DB 저장)", type="primary", use_container_width=True, key="save_bottom"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 for idx, row in edited_attendance.iterrows():
@@ -623,7 +599,7 @@ else:
                 conn.commit()
                 conn.close()
                 st.balloons()
-                st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 저장되었습니다.)")
+                st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 완벽히 저장되었습니다.)")
 
         with tab_dc2:
             df_dc_master = load_daycare_master()
@@ -691,7 +667,6 @@ else:
                         st.success(f"[{dc_row['성함']}] 어르신이 마스터 DB에서 삭제되었습니다.")
                         st.rerun()
 
-    # [메뉴 4] 식수 & 배식지시서
     elif menu == "4. 식수 & 배식지시서 (히스토리)":
         st.title("📋 식수 집계표 및 조리실 배식지시서")
         today_str = datetime.today().strftime('%Y-%m-%d')
@@ -717,7 +692,6 @@ else:
         st.subheader("📄 오늘의 통합 배식지시서 명단")
         st.dataframe(full_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
 
-    # [메뉴 5] 명찰 카드 대량 출력
     elif menu == "5. 명찰 카드 대량 출력":
         st.title("🎴 배식용 명찰 카드 대량 생성")
         today_str = datetime.today().strftime('%Y-%m-%d')
@@ -739,17 +713,14 @@ else:
 
             st.download_button(label="📦 명찰 카드 압축파일(.zip) 다운로드", data=zip_buffer.getvalue(), file_name="명찰카드.zip", mime="application/zip", use_container_width=True)
 
-    # [메뉴 6] 주간 식단표 관리
     elif menu == "6. 주간 식단표 관리 (엑셀 연동)":
         st.title("📅 주간 식단표 엑셀 연동")
         st.dataframe(st.session_state["weekly_menu"], use_container_width=True)
 
-    # [메뉴 7] 식자재 발주 & 원가 관리
     elif menu == "7. 식자재 발주 & 원가 관리":
         st.title("🛒 식자재 발주 & 원가 관리")
         st.dataframe(st.session_state["orders"], use_container_width=True)
 
-    # [메뉴 8] 위생 & 보존식·검식일지 관리
     elif menu == "8. 위생 & 보존식·검식일지 관리":
         st.title("🛡️ 건보공단 평가 대응 서류")
         st.success("✅ 당일 식단표 기반 보존식 및 검식일지가 자동 완성되어 준비되었습니다.")
