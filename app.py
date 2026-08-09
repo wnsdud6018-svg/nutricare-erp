@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+import sqlalchemy
+import psycopg2
 import io
 import zipfile
 from datetime import datetime, timedelta
