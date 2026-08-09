@@ -20,7 +20,6 @@ def login_screen():
     st.markdown("<h4 style='text-align: center; color: gray;'>NutriCare ERP 보안 로그인</h4>", unsafe_allow_html=True)
     st.write("")
     
-    # 쿠키/세션 기반 저장 값 기본 세팅
     saved_user = st.session_state.get("saved_username", "")
     saved_pw = st.session_state.get("saved_password", "")
     saved_remember = st.session_state.get("saved_remember", False)
@@ -39,7 +38,6 @@ def login_screen():
                     st.session_state["logged_in"] = True
                     st.session_state["user_info"] = USER_DB[username]
                     
-                    # 기억하기 상태 저장
                     if remember_me:
                         st.session_state["saved_username"] = username
                         st.session_state["saved_password"] = password
@@ -315,9 +313,67 @@ def generate_card_image(floor, name, meal_type, side_type, kimchi_type):
     return card
 
 # ---------------------------------------------------------
-# 2. 메인 실행 컨트롤러 (로그인 체킹)
+# 2. 메인 실행 및 사이드바 박스형 UI 커스텀
 # ---------------------------------------------------------
 st.set_page_config(page_title="연세 효성 NutriCare ERP", layout="wide")
+
+# 사이드바 박스형 대형 메뉴 CSS 주입
+st.markdown("""
+<style>
+/* 사이드바 메뉴 제목 폰트 확대 */
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+    font-size: 21px !important;
+    font-weight: 800 !important;
+    color: #111827 !important;
+    margin-bottom: 8px !important;
+}
+
+/* 라디오 버튼의 동그라미 감추기 및 큼직한 박스 터치 버튼화 */
+[data-testid="stSidebar"] div[role="radiogroup"] > label {
+    background-color: #ffffff !important;
+    border: 2px solid #e5e7eb !important;
+    border-radius: 12px !important;
+    padding: 14px 16px !important;
+    margin-bottom: 10px !important;
+    box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.04) !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+/* 라디오 동그라미 아이콘 숨기기 */
+[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
+    display: none !important;
+}
+
+/* 메뉴 텍스트 폰트 대폭 확대 및 시인성 강화 */
+[data-testid="stSidebar"] div[role="radiogroup"] > label [data-testid="stMarkdownContainer"] p {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    color: #374151 !important;
+    line-height: 1.4 !important;
+    margin: 0 !important;
+}
+
+/* 선택된 메뉴 박스 하이라이트 (파란색 박스 & 테두리 강조) */
+[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+    background-color: #eff6ff !important;
+    border-color: #2563eb !important;
+    border-width: 2.5px !important;
+    box-shadow: 0px 4px 10px rgba(37, 99, 235, 0.18) !important;
+}
+
+[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) [data-testid="stMarkdownContainer"] p {
+    color: #1d4ed8 !important;
+    font-weight: 900 !important;
+}
+
+/* 마우스 호버 효과 */
+[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+    border-color: #3b82f6 !important;
+    background-color: #f8fafc !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
     login_screen()
@@ -635,7 +691,7 @@ else:
                         st.success(f"[{dc_row['성함']}] 어르신이 마스터 DB에서 삭제되었습니다.")
                         st.rerun()
 
-    # [메뉴 4~8 기존 동일 구동]
+    # [메뉴 4] 식수 & 배식지시서
     elif menu == "4. 식수 & 배식지시서 (히스토리)":
         st.title("📋 식수 집계표 및 조리실 배식지시서")
         today_str = datetime.today().strftime('%Y-%m-%d')
@@ -661,6 +717,7 @@ else:
         st.subheader("📄 오늘의 통합 배식지시서 명단")
         st.dataframe(full_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
 
+    # [메뉴 5] 명찰 카드 대량 출력
     elif menu == "5. 명찰 카드 대량 출력":
         st.title("🎴 배식용 명찰 카드 대량 생성")
         today_str = datetime.today().strftime('%Y-%m-%d')
@@ -682,14 +739,17 @@ else:
 
             st.download_button(label="📦 명찰 카드 압축파일(.zip) 다운로드", data=zip_buffer.getvalue(), file_name="명찰카드.zip", mime="application/zip", use_container_width=True)
 
+    # [메뉴 6] 주간 식단표 관리
     elif menu == "6. 주간 식단표 관리 (엑셀 연동)":
         st.title("📅 주간 식단표 엑셀 연동")
         st.dataframe(st.session_state["weekly_menu"], use_container_width=True)
 
+    # [메뉴 7] 식자재 발주 & 원가 관리
     elif menu == "7. 식자재 발주 & 원가 관리":
         st.title("🛒 식자재 발주 & 원가 관리")
         st.dataframe(st.session_state["orders"], use_container_width=True)
 
+    # [메뉴 8] 위생 & 보존식·검식일지 관리
     elif menu == "8. 위생 & 보존식·검식일지 관리":
         st.title("🛡️ 건보공단 평가 대응 서류")
         st.success("✅ 당일 식단표 기반 보존식 및 검식일지가 자동 완성되어 준비되었습니다.")
