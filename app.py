@@ -221,33 +221,6 @@ if "orders" not in st.session_state:
         {"품목명": "단호박 (생물)", "규격": "10kg", "단위": "상자", "필요수량": 2, "발주수량": 2, "단가(원)": 18000, "공급업체": "싱싱농산"}
     ])
 
-def auto_recalculate_ingredients_and_cost():
-    df_res = load_residents()
-    today_str = datetime.today().strftime('%Y-%m-%d')
-    df_daycare = load_daycare_attendance_by_date(today_str)
-    active_dc = df_daycare[df_daycare["출석여부"] == True]
-    total_residents = len(df_res) + len(active_dc)
-    
-    if total_residents == 0:
-        total_residents = 1
-        
-    menu_df = st.session_state["weekly_menu"]
-    all_menu_text = " ".join(menu_df["아침"].fillna('') + " " + menu_df["점심"].fillna('') + " " + menu_df["저녁"].fillna(''))
-    
-    rice_bags = max(2, int(total_residents * 0.08))
-    pork_kg = max(5, int(total_residents * 0.3)) if "돼지" in all_menu_text or "제육" in all_menu_text or "돈육" in all_menu_text else 8
-    kimchi_box = max(2, int(total_residents * 0.1))
-    egg_box = max(4, int(total_residents * 0.2)) if "계란" in all_menu_text or "스크램블" in all_menu_text else 3
-    pumpkin_box = max(1, int(total_residents * 0.05)) if "호박" in all_menu_text else 1
-
-    st.session_state["orders"] = pd.DataFrame([
-        {"품목명": "백미 (20kg)", "규격": "포", "단위": "포", "필요수량": rice_bags, "발주수량": rice_bags, "단가(원)": 55000, "공급업체": "농협식자재"},
-        {"품목명": "돼지고기 (돈육 전지)", "규격": "kg", "단위": "kg", "필요수량": pork_kg, "발주수량": pork_kg, "단가(원)": 12000, "공급업체": "축산유통"},
-        {"품목명": "배추김치 (국산)", "규격": "10kg", "단위": "상자", "필요수량": kimchi_box, "발주수량": kimchi_box, "단가(원)": 32000, "공급업체": "대성식품"},
-        {"품목명": "계란 (특란)", "규격": "30구", "단위": "판", "필요수량": egg_box, "발주수량": egg_box, "단가(원)": 6500, "공급업체": "축산유통"},
-        {"품목명": "단호박 (생물)", "규격": "10kg", "단위": "상자", "필요수량": pumpkin_box, "발주수량": pumpkin_box, "단가(원)": 18000, "공급업체": "싱싱농산"}
-    ])
-
 def generate_card_image(floor, name, meal_type, side_type, kimchi_type):
     width, height = 600, 400
     card = Image.new("RGB", (width, height), "white")
@@ -577,7 +550,6 @@ else:
         with tab_dc1:
             st.subheader(f"📝 [{target_date_str}] 주간보호 출석 및 식사 체크")
             
-            # 1) 표(Data Editor)를 먼저 선언
             edited_attendance = st.data_editor(
                 df_attendance[["id", "성함", "출석여부", "중식", "석식", "익일조식", "주식", "부식", "김치", "특이사항"]],
                 num_rows="dynamic",
@@ -586,7 +558,6 @@ else:
             )
 
             st.write("")
-            # 2) 저장 버튼을 표 아래 배치하여 NameError 완벽 방지
             if st.button("✅ 체크 확인 및 저장 완료 (1클릭 DB 저장)", type="primary", use_container_width=True, key="save_bottom"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
@@ -600,6 +571,43 @@ else:
                 conn.close()
                 st.balloons()
                 st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 완벽히 저장되었습니다.)")
+
+            # ---------------------------------------------------------
+            # 💡 [2차 확정/검증] 식사별 신청 어르신 명단 및 인원수 요약 현황판
+            # ---------------------------------------------------------
+            st.markdown("---")
+            st.subheader(f"🔍 [{target_date_str}] 식사별 2차 교차 확인 현황판 (실시간 요약)")
+            st.caption("선생님이 저장한 식수가 정상적으로 반영되었는지 명단을 바로 확인하세요.")
+
+            # 최신 저장 상태 재조회
+            df_check = load_daycare_attendance_by_date(target_date_str)
+            
+            lunch_users = df_check[df_check["중식"] == True]["성함"].tolist()
+            dinner_users = df_check[df_check["석식"] == True]["성함"].tolist()
+            breakfast_users = df_check[df_check["익일조식"] == True]["성함"].tolist()
+
+            col_v1, col_v2, col_v3 = st.columns(3)
+
+            with col_v1:
+                st.info(f"🥣 **[중식] 신청 어르신 (총 {len(lunch_users)}명)**")
+                if len(lunch_users) > 0:
+                    st.write("• " + "\n• ".join(lunch_users))
+                else:
+                    st.caption("신청한 어르신이 없습니다.")
+
+            with col_v2:
+                st.warning(f"🌙 **[석식] 신청 어르신 (총 {len(dinner_users)}명)**")
+                if len(dinner_users) > 0:
+                    st.write("• " + "\n• ".join(dinner_users))
+                else:
+                    st.caption("신청한 어르신이 없습니다.")
+
+            with col_v3:
+                st.success(f"🌅 **[익일 조식] 신청 어르신 (총 {len(breakfast_users)}명)**")
+                if len(breakfast_users) > 0:
+                    st.write("• " + "\n• ".join(breakfast_users))
+                else:
+                    st.caption("신청한 어르신이 없습니다.")
 
         with tab_dc2:
             df_dc_master = load_daycare_master()
