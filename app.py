@@ -4,12 +4,16 @@ import sqlalchemy
 import psycopg2
 import io
 import zipfile
+import json
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
+
 st.set_page_config(
     page_title="연세 효성 NutriCare ERP",
     page_icon="🏥",
-    layout="wide")
+    layout="wide"
+)
+
 # ---------------------------------------------------------
 # 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 아이디/비밀번호 저장)
 # ---------------------------------------------------------
@@ -57,6 +61,7 @@ def login_screen():
 # 1. Database (Neon PostgreSQL) 클라우드 저장소 구축 및 초기화
 # ---------------------------------------------------------
 DATABASE_URL = "postgresql://neondb_owner:npg_z0aPSgEmhuy1@ep-delicate-fog-ayulfqc7-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
 @st.cache_resource
 def get_db_engine():
     return sqlalchemy.create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -153,10 +158,13 @@ def init_db():
 
 init_db()
 
-def load_daycare_master():
+# 데이터 로드 전역 함수 (캐싱 적용)
+@st.cache_data(ttl=60)
+def load_residents():
     query = "SELECT id, floor AS 층, room AS 호실, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM residents"
     return pd.read_sql(query, engine)
 
+@st.cache_data(ttl=60)
 def load_daycare_master():
     query = "SELECT id, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM daycare_master"
     return pd.read_sql(query, engine)
@@ -298,7 +306,6 @@ def generate_card_image(floor, name, meal_type, side_type, kimchi_type):
 # ---------------------------------------------------------
 # 2. 메인 실행 및 사이드바 박스형 UI 커스텀
 # ---------------------------------------------------------
-
 st.markdown("""
 <style>
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
@@ -402,15 +409,7 @@ else:
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛡️ 안전 백업 & 데이터 복구")
-@st.cache_data(ttl=60)
-def load_residents():
-    query = "SELECT id, floor AS 층, room AS 호실, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM residents"
-    return pd.read_sql(query, engine)
 
-@st.cache_data(ttl=60)
-def load_daycare_master():
-    query = "SELECT id, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM daycare_master"
-    return pd.read_sql(query, engine)
     df_backup_res = load_residents()
     df_backup_dc = load_daycare_master()
 
@@ -458,7 +457,6 @@ def load_daycare_master():
                             conn = get_db_connection()
                             cursor = conn.cursor()
                             
-                            import json
                             new_info = json.loads(row['new_data'])
                             
                             if row['target_table'] == 'residents':
@@ -484,6 +482,7 @@ def load_daycare_master():
                             cursor.execute("UPDATE pending_approvals SET status='APPROVED' WHERE id=%s", (row['id'],))
                             conn.commit()
                             conn.close()
+                            st.cache_data.clear()
                             st.balloons()
                             st.success("✅ 승인이 완료되어 실제 DB 및 배식지시서에 최종 반영되었습니다.")
                             st.rerun()
@@ -556,7 +555,6 @@ def load_daycare_master():
                     submit = st.form_submit_button("어르신 등록 승인 요청 전송", type="primary", use_container_width=True)
 
                 if submit:
-                    import json
                     conn = get_db_connection()
                     cursor = conn.cursor()
                     new_data_str = json.dumps({"floor": floor, "room": room, "name": name, "meal": meal, "side": side, "kimchi": kimchi, "note": note}, ensure_ascii=False)
@@ -600,7 +598,6 @@ def load_daycare_master():
                         
                         update_btn = st.form_submit_button("수정 승인 요청 전송", use_container_width=True)
                         if update_btn:
-                            import json
                             conn = get_db_connection()
                             cursor = conn.cursor()
                             old_str = json.dumps(dict(target_row), ensure_ascii=False)
@@ -617,7 +614,6 @@ def load_daycare_master():
                     st.subheader("🗑️ 퇴소 삭제 요청")
                     st.warning(f"선택한 [{target_row['성함']}] 어르신의 퇴소 삭제 요청을 전송합니다.")
                     if st.button("🗑️ 퇴소 삭제 승인 요청 전송", type="primary", use_container_width=True):
-                        import json
                         conn = get_db_connection()
                         cursor = conn.cursor()
                         old_str = json.dumps(dict(target_row), ensure_ascii=False)
@@ -685,6 +681,7 @@ def load_daycare_master():
                     """, (int(row["출석여부"]), int(row["중식"]), int(row["석식"]), int(row["익일조식"]), row["주식"], row["부식"], row["김치"], row["특이사항"], int(row["id"])))
                 conn.commit()
                 conn.close()
+                st.cache_data.clear()
                 st.balloons()
                 st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 완벽히 저장되었습니다.)")
 
@@ -739,7 +736,6 @@ def load_daycare_master():
 
                     submit_dc = st.form_submit_button("주간보호 마스터 승인 요청 전송", type="primary", use_container_width=True)
                     if submit_dc:
-                        import json
                         conn = get_db_connection()
                         cursor = conn.cursor()
                         new_data_str = json.dumps({"name": dc_name, "meal": dc_meal, "side": dc_side, "kimchi": dc_kimchi, "note": dc_note}, ensure_ascii=False)
@@ -771,7 +767,6 @@ def load_daycare_master():
 
                         update_dc_btn = st.form_submit_button("수정 승인 요청 전송", use_container_width=True)
                         if update_dc_btn:
-                            import json
                             conn = get_db_connection()
                             cursor = conn.cursor()
                             old_str = json.dumps(dict(dc_row), ensure_ascii=False)
@@ -786,7 +781,6 @@ def load_daycare_master():
 
                     st.markdown("---")
                     if st.button(f"🗑️ [{dc_row['성함']}] 주간보호 어르신 삭제 요청", type="primary", use_container_width=True):
-                        import json
                         conn = get_db_connection()
                         cursor = conn.cursor()
                         old_str = json.dumps(dict(dc_row), ensure_ascii=False)
