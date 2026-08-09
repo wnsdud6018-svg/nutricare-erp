@@ -402,7 +402,15 @@ else:
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛡️ 안전 백업 & 데이터 복구")
+@st.cache_data(ttl=60)
+def load_residents():
+    query = "SELECT id, floor AS 층, room AS 호실, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM residents"
+    return pd.read_sql(query, engine)
 
+@st.cache_data(ttl=60)
+def load_daycare_master():
+    query = "SELECT id, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM daycare_master"
+    return pd.read_sql(query, engine)
     df_backup_res = load_residents()
     df_backup_dc = load_daycare_master()
 
