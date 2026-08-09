@@ -294,7 +294,6 @@ def generate_card_image(floor, name, meal_type, side_type, kimchi_type):
 # ---------------------------------------------------------
 # 2. 메인 실행 및 사이드바 박스형 UI 커스텀
 # ---------------------------------------------------------
-st.set_page_config(page_title="연세 효성 NutriCare ERP", layout="wide")
 
 st.markdown("""
 <style>
