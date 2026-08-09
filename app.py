@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------
-# 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 비밀번호 저장)
+# 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 아이디/비밀번호 저장)
 # ---------------------------------------------------------
 USER_DB = {
     "nutrition": {"name": "영양실 (영양사)", "password": "1234", "role": "NUTRITION"},
@@ -21,15 +21,14 @@ def login_screen():
     st.write("")
     
     saved_user = st.session_state.get("saved_username", "")
-    saved_pw = st.session_state.get("saved_password", "")
-    saved_remember = st.session_state.get("saved_remember", False)
+    saved_remember_id = st.session_state.get("saved_remember_id", True if saved_user else False)
 
     col_c1, col_c2, col_c3 = st.columns([1, 2, 1])
     with col_c2:
         with st.form("login_form"):
             username = st.text_input("👤 아이디", value=saved_user, key="user_id")
-            password = st.text_input("🔒 비밀번호", value=saved_pw, type="password", key="user_pw")
-            remember_me = st.checkbox("☑️ 아이디 및 비밀번호 기억하기 (자동 입력)", value=saved_remember)
+            password = st.text_input("🔒 비밀번호", type="password", key="user_pw")
+            remember_id = st.checkbox("☑️ 아이디 기억하기", value=saved_remember_id)
             
             submit_login = st.form_submit_button("로그인", type="primary", use_container_width=True)
             
@@ -38,14 +37,12 @@ def login_screen():
                     st.session_state["logged_in"] = True
                     st.session_state["user_info"] = USER_DB[username]
                     
-                    if remember_me:
+                    if remember_id:
                         st.session_state["saved_username"] = username
-                        st.session_state["saved_password"] = password
-                        st.session_state["saved_remember"] = True
+                        st.session_state["saved_remember_id"] = True
                     else:
                         st.session_state["saved_username"] = ""
-                        st.session_state["saved_password"] = ""
-                        st.session_state["saved_remember"] = False
+                        st.session_state["saved_remember_id"] = False
                         
                     st.success(f"🎉 환영합니다, {USER_DB[username]['name']}님!")
                     st.rerun()
@@ -572,14 +569,10 @@ else:
                 st.balloons()
                 st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 완벽히 저장되었습니다.)")
 
-            # ---------------------------------------------------------
-            # 💡 [2차 확정/검증] 식사별 신청 어르신 명단 및 인원수 요약 현황판
-            # ---------------------------------------------------------
             st.markdown("---")
             st.subheader(f"🔍 [{target_date_str}] 식사별 2차 교차 확인 현황판 (실시간 요약)")
-            st.caption("선생님이 저장한 식수가 정상적으로 반영되었는지 명단을 바로 확인하세요.")
+            st.caption("선생님이 저장한 식수가 정상적으로 반영되었는지 명단과 인원수를 바로 확인하세요.")
 
-            # 최신 저장 상태 재조회
             df_check = load_daycare_attendance_by_date(target_date_str)
             
             lunch_users = df_check[df_check["중식"] == True]["성함"].tolist()
