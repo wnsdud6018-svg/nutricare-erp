@@ -6,7 +6,11 @@ import io
 import zipfile
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
-
+st.set_page_config(
+    page_title="연세 효성 NutriCare ERP",
+    page_icon="🏥",
+    layout="wide"
+    
 # ---------------------------------------------------------
 # 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 아이디/비밀번호 저장)
 # ---------------------------------------------------------
