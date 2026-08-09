@@ -57,7 +57,11 @@ def login_screen():
 # 1. Database (Neon PostgreSQL) 클라우드 저장소 구축 및 초기화
 # ---------------------------------------------------------
 DATABASE_URL = "postgresql://neondb_owner:npg_z0aPSgEmhuy1@ep-delicate-fog-ayulfqc7-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
-engine = sqlalchemy.create_engine(DATABASE_URL)
+@st.cache_resource
+def get_db_engine():
+    return sqlalchemy.create_engine(DATABASE_URL, pool_pre_ping=True)
+
+engine = get_db_engine()
 
 def get_db_connection():
     # PostgreSQL과 통신하기 위한 psycopg2 커넥션
@@ -149,7 +153,7 @@ def init_db():
 
 init_db()
 
-def load_residents():
+def load_daycare_master():
     query = "SELECT id, floor AS 층, room AS 호실, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM residents"
     return pd.read_sql(query, engine)
 
