@@ -51,13 +51,14 @@ def login_screen():
                     st.error("❌ 아이디 또는 비밀번호가 올바르지 않습니다.")
 
 # ---------------------------------------------------------
-# 1. Database (SQLite) 영구 저장소 구축 및 초기화
+# 1. Database (Neon PostgreSQL) 클라우드 저장소 구축 및 초기화
 # ---------------------------------------------------------
-DB_FILE = "nutricare.db"
+DATABASE_URL = "postgresql://neondb_owner:npg_z0aPSgEmhuy1@ep-delicate-fog-ayulfqc7-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
+engine = sqlalchemy.create_engine(DATABASE_URL)
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    # PostgreSQL과 통신하기 위한 psycopg2 커넥션
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 def init_db():
@@ -66,7 +67,7 @@ def init_db():
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS residents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             floor TEXT NOT NULL,
             room TEXT NOT NULL,
             name TEXT NOT NULL,
@@ -79,7 +80,7 @@ def init_db():
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS daycare_master (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             meal TEXT NOT NULL,
             side TEXT NOT NULL,
@@ -90,7 +91,7 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS daycare_daily_attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             att_date TEXT NOT NULL,
             master_id INTEGER NOT NULL,
             name TEXT NOT NULL,
@@ -105,10 +106,9 @@ def init_db():
         )
     """)
     
-    # 승인 대기 테이블 (Workflow Approval)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pending_approvals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             requester TEXT NOT NULL,
             request_type TEXT NOT NULL,
             target_table TEXT NOT NULL,
@@ -122,26 +122,24 @@ def init_db():
     
     cursor.execute("SELECT COUNT(*) FROM residents")
     if cursor.fetchone()[0] == 0:
-        cursor.executemany("""
+        cursor.execute("""
             INSERT INTO residents (floor, room, name, meal, side, kimchi, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [
-            ("2층", "201호", "김 순 낭", "🥣 일  반  죽", "★ 다 진 찬", "★ 다진김치(빨간)", "당뇨 주의"),
-            ("2층", "202호", "이 영 희", "🌾 잡  곡  밥", "일  반  찬", "백  김  치", "저염식"),
-            ("3층", "301호", "박 철 수", "🎃 호  박  죽", "♥ 갈  찬", "♡ 간김치(백)", "연하곤란 중증 (주의!)"),
-            ("1층", "101호", "최 자 영", "🥛 미      음", "♥ 갈  찬", "없      음", "수분 섭취 주의")
-        ])
+            VALUES 
+            ('2층', '201호', '김 순 낭', '🥣 일  반  죽', '★ 다 진 찬', '★ 다진김치(빨간)', '당뇨 주의'),
+            ('2층', '202호', '이 영 희', '🌾 잡  곡  밥', '일  반  찬', '백  김  치', '저염식'),
+            ('3층', '301호', '박 철 수', '🎃 호  박  죽', '♥ 갈  찬', '♡ 간김치(백)', '연하곤란 중증 (주의!)'),
+            ('1층', '101호', '최 자 영', '🥛 미      음', '♥ 갈  찬', '없      음', '수분 섭취 주의')
+        """)
         
     cursor.execute("SELECT COUNT(*) FROM daycare_master")
     if cursor.fetchone()[0] == 0:
-        cursor.executemany("""
+        cursor.execute("""
             INSERT INTO daycare_master (name, meal, side, kimchi, note)
-            VALUES (?, ?, ?, ?, ?)
-        """, [
-            ("정 영 자", "🌾 잡  곡  밥", "일  반  찬", "백  김  치", "송영 1차"),
-            ("강 대 성", "🥣 일  반  죽", "★ 다 진 찬", "★ 다진김치(빨간)", "송영 2차 / 당뇨"),
-            ("윤 서 진", "일  반  밥", "일  반  찬", "빨 간 김 치", "오늘 병원 진료")
-        ])
+            VALUES 
+            ('정 영 자', '🌾 잡  곡  밥', '일  반  찬', '백  김  치', '송영 1차'),
+            ('강 대 성', '🥣 일  반  죽', '★ 다 진 찬', '★ 다진김치(빨간)', '송영 2차 / 당뇨'),
+            ('윤 서 진', '일  반  밥', '일  반  찬', '빨 간 김 치', '오늘 병원 진료')
+        """)
         
     conn.commit()
     conn.close()
@@ -149,50 +147,39 @@ def init_db():
 init_db()
 
 def load_residents():
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT id, floor AS 층, room AS 호실, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM residents", conn)
-    conn.close()
-    return df
+    query = "SELECT id, floor AS 층, room AS 호실, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM residents"
+    return pd.read_sql(query, engine)
 
 def load_daycare_master():
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT id, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM daycare_master", conn)
-    conn.close()
-    return df
+    query = "SELECT id, name AS 성함, meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 FROM daycare_master"
+    return pd.read_sql(query, engine)
 
 def load_daycare_attendance_by_date(selected_date_str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    df = pd.read_sql_query("""
+    query = """
         SELECT id, att_date, master_id, name AS 성함, 
                attended AS 출석여부, lunch_requested AS 중식, 
                dinner_requested AS 석식, next_breakfast_requested AS 익일조식,
                meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 
         FROM daycare_daily_attendance 
-        WHERE att_date=?
-    """, conn, params=(selected_date_str,))
+        WHERE att_date=%(date)s
+    """
+    df = pd.read_sql(query, engine, params={"date": selected_date_str})
     
     if len(df) == 0:
         master_df = load_daycare_master()
+        conn = get_db_connection()
+        cursor = conn.cursor()
         for idx, row in master_df.iterrows():
             cursor.execute("""
                 INSERT INTO daycare_daily_attendance 
                 (att_date, master_id, name, attended, lunch_requested, dinner_requested, next_breakfast_requested, meal, side, kimchi, note)
-                VALUES (?, ?, ?, 1, 1, 0, 0, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, 1, 1, 0, 0, %s, %s, %s, %s)
             """, (selected_date_str, row['id'], row['성함'], row['주식'], row['부식'], row['김치'], row['특이사항']))
         conn.commit()
+        conn.close()
         
-        df = pd.read_sql_query("""
-            SELECT id, att_date, master_id, name AS 성함, 
-                   attended AS 출석여부, lunch_requested AS 중식, 
-                   dinner_requested AS 석식, next_breakfast_requested AS 익일조식,
-                   meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 
-            FROM daycare_daily_attendance 
-            WHERE att_date=?
-        """, conn, params=(selected_date_str,))
+        df = pd.read_sql(query, engine, params={"date": selected_date_str})
 
-    conn.close()
     df["출석여부"] = df["출석여부"].astype(bool)
     df["중식"] = df["중식"].astype(bool)
     df["석식"] = df["석식"].astype(bool)
@@ -434,9 +421,8 @@ else:
         st.caption("현장 선생님들(복지사/요양보호사/영양사)이 요청한 식이 변경 및 신규 등록 건을 검증하고 승인합니다.")
         st.markdown("---")
 
-        conn = get_db_connection()
-        pending_df = pd.read_sql_query("SELECT * FROM pending_approvals WHERE status='PENDING' ORDER BY request_time DESC", conn)
-        conn.close()
+        query = "SELECT * FROM pending_approvals WHERE status='PENDING' ORDER BY request_time DESC"
+        pending_df = pd.read_sql(query, engine)
 
         if len(pending_df) == 0:
             st.success("✅ 현재 대기 중인 승인 요청이 없습니다. 모든 데이터가 정산 완료되었습니다.")
@@ -458,31 +444,30 @@ else:
                             conn = get_db_connection()
                             cursor = conn.cursor()
                             
-                            # 실제 DB 처리
                             import json
                             new_info = json.loads(row['new_data'])
                             
                             if row['target_table'] == 'residents':
                                 if row['request_type'] == 'INSERT':
-                                    cursor.execute("INSERT INTO residents (floor, room, name, meal, side, kimchi, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                    cursor.execute("INSERT INTO residents (floor, room, name, meal, side, kimchi, note) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                                                    (new_info['floor'], new_info['room'], new_info['name'], new_info['meal'], new_info['side'], new_info['kimchi'], new_info['note']))
                                 elif row['request_type'] == 'UPDATE':
-                                    cursor.execute("UPDATE residents SET floor=?, room=?, name=?, meal=?, side=?, kimchi=?, note=? WHERE id=?",
+                                    cursor.execute("UPDATE residents SET floor=%s, room=%s, name=%s, meal=%s, side=%s, kimchi=%s, note=%s WHERE id=%s",
                                                    (new_info['floor'], new_info['room'], new_info['name'], new_info['meal'], new_info['side'], new_info['kimchi'], new_info['note'], row['target_id']))
                                 elif row['request_type'] == 'DELETE':
-                                    cursor.execute("DELETE FROM residents WHERE id=?", (row['target_id'],))
+                                    cursor.execute("DELETE FROM residents WHERE id=%s", (row['target_id'],))
                                     
                             elif row['target_table'] == 'daycare_master':
                                 if row['request_type'] == 'INSERT':
-                                    cursor.execute("INSERT INTO daycare_master (name, meal, side, kimchi, note) VALUES (?, ?, ?, ?, ?)",
+                                    cursor.execute("INSERT INTO daycare_master (name, meal, side, kimchi, note) VALUES (%s, %s, %s, %s, %s)",
                                                    (new_info['name'], new_info['meal'], new_info['side'], new_info['kimchi'], new_info['note']))
                                 elif row['request_type'] == 'UPDATE':
-                                    cursor.execute("UPDATE daycare_master SET name=?, meal=?, side=?, kimchi=?, note=? WHERE id=?",
+                                    cursor.execute("UPDATE daycare_master SET name=%s, meal=%s, side=%s, kimchi=%s, note=%s WHERE id=%s",
                                                    (new_info['name'], new_info['meal'], new_info['side'], new_info['kimchi'], new_info['note'], row['target_id']))
                                 elif row['request_type'] == 'DELETE':
-                                    cursor.execute("DELETE FROM daycare_master WHERE id=?", (row['target_id'],))
+                                    cursor.execute("DELETE FROM daycare_master WHERE id=%s", (row['target_id'],))
 
-                            cursor.execute("UPDATE pending_approvals SET status='APPROVED' WHERE id=?", (row['id'],))
+                            cursor.execute("UPDATE pending_approvals SET status='APPROVED' WHERE id=%s", (row['id'],))
                             conn.commit()
                             conn.close()
                             st.balloons()
@@ -493,7 +478,7 @@ else:
                         if st.button(f"🔴 반려 처리 (ID:{row['id']})", use_container_width=True, key=f"rej_{row['id']}"):
                             conn = get_db_connection()
                             cursor = conn.cursor()
-                            cursor.execute("UPDATE pending_approvals SET status='REJECTED' WHERE id=?", (row['id'],))
+                            cursor.execute("UPDATE pending_approvals SET status='REJECTED' WHERE id=%s", (row['id'],))
                             conn.commit()
                             conn.close()
                             st.warning("❌ 요청이 반려되었습니다.")
@@ -563,7 +548,7 @@ else:
                     new_data_str = json.dumps({"floor": floor, "room": room, "name": name, "meal": meal, "side": side, "kimchi": kimchi, "note": note}, ensure_ascii=False)
                     cursor.execute("""
                         INSERT INTO pending_approvals (requester, request_type, target_table, new_data, request_time)
-                        VALUES (?, 'INSERT', 'residents', ?, ?)
+                        VALUES (%s, 'INSERT', 'residents', %s, %s)
                     """, (user['name'], new_data_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                     conn.commit()
                     conn.close()
@@ -608,7 +593,7 @@ else:
                             new_str = json.dumps({"floor": e_floor, "room": e_room, "name": e_name, "meal": e_meal, "side": e_side, "kimchi": e_kimchi, "note": e_note}, ensure_ascii=False)
                             cursor.execute("""
                                 INSERT INTO pending_approvals (requester, request_type, target_table, target_id, old_data, new_data, request_time)
-                                VALUES (?, 'UPDATE', 'residents', ?, ?, ?, ?)
+                                VALUES (%s, 'UPDATE', 'residents', %s, %s, %s, %s)
                             """, (user['name'], target_id, old_str, new_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                             conn.commit()
                             conn.close()
@@ -624,7 +609,7 @@ else:
                         old_str = json.dumps(dict(target_row), ensure_ascii=False)
                         cursor.execute("""
                             INSERT INTO pending_approvals (requester, request_type, target_table, target_id, old_data, new_data, request_time)
-                            VALUES (?, 'DELETE', 'residents', ?, ?, '퇴소 영구 삭제 요청', ?)
+                            VALUES (%s, 'DELETE', 'residents', %s, %s, '퇴소 영구 삭제 요청', %s)
                         """, (user['name'], target_id, old_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                         conn.commit()
                         conn.close()
@@ -681,8 +666,8 @@ else:
                 for idx, row in edited_attendance.iterrows():
                     cursor.execute("""
                         UPDATE daycare_daily_attendance 
-                        SET attended=?, lunch_requested=?, dinner_requested=?, next_breakfast_requested=?, meal=?, side=?, kimchi=?, note=?
-                        WHERE id=?
+                        SET attended=%s, lunch_requested=%s, dinner_requested=%s, next_breakfast_requested=%s, meal=%s, side=%s, kimchi=%s, note=%s
+                        WHERE id=%s
                     """, (int(row["출석여부"]), int(row["중식"]), int(row["석식"]), int(row["익일조식"]), row["주식"], row["부식"], row["김치"], row["특이사항"], int(row["id"])))
                 conn.commit()
                 conn.close()
@@ -746,7 +731,7 @@ else:
                         new_data_str = json.dumps({"name": dc_name, "meal": dc_meal, "side": dc_side, "kimchi": dc_kimchi, "note": dc_note}, ensure_ascii=False)
                         cursor.execute("""
                             INSERT INTO pending_approvals (requester, request_type, target_table, new_data, request_time)
-                            VALUES (?, 'INSERT', 'daycare_master', ?, ?)
+                            VALUES (%s, 'INSERT', 'daycare_master', %s, %s)
                         """, (user['name'], new_data_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                         conn.commit()
                         conn.close()
@@ -779,7 +764,7 @@ else:
                             new_str = json.dumps({"name": edc_name, "meal": edc_meal, "side": edc_side, "kimchi": edc_kimchi, "note": edc_note}, ensure_ascii=False)
                             cursor.execute("""
                                 INSERT INTO pending_approvals (requester, request_type, target_table, target_id, old_data, new_data, request_time)
-                                VALUES (?, 'UPDATE', 'daycare_master', ?, ?, ?, ?)
+                                VALUES (%s, 'UPDATE', 'daycare_master', %s, %s, %s, %s)
                             """, (user['name'], dc_id, old_str, new_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                             conn.commit()
                             conn.close()
@@ -793,7 +778,7 @@ else:
                         old_str = json.dumps(dict(dc_row), ensure_ascii=False)
                         cursor.execute("""
                             INSERT INTO pending_approvals (requester, request_type, target_table, target_id, old_data, new_data, request_time)
-                            VALUES (?, 'DELETE', 'daycare_master', ?, ?, '주간보호 삭제 요청', ?)
+                            VALUES (%s, 'DELETE', 'daycare_master', %s, %s, '주간보호 삭제 요청', %s)
                         """, (user['name'], dc_id, old_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                         conn.commit()
                         conn.close()
