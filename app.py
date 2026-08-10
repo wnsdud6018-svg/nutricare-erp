@@ -537,7 +537,35 @@ else:
 
         df_res = load_residents()
         tab1, tab2 = st.tabs(["➕ 신규 어르신 등록 요청", "✏️ 어르신 정보 수정 요청 및 🗑️ 삭제"])
-
+        
+# 엑셀 파일 업로드 일괄 동기화 모듈
+        with st.expander("📥 [실측 데이터] 요양원 입소 어르신 엑셀 명단 DB 자동 동기화"):
+            up_res_file = st.file_uploader("연세노인요양원 인원 및 특이사항.xlsx 파일을 올려주세요", type=["xlsx"], key="up_res_excel")
+            if up_res_file is not None and st.button("🚀 49명 요양원 어르신 DB 일괄 저장/갱신", type="primary"):
+                df_res_excel = pd.read_excel(up_res_file, sheet_name="요양원 인원수").dropna(subset=['이름'])
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("TRUNCATE TABLE residents RESTART IDENTITY;") # 기존 임시 데이터 초기화
+                
+                for idx, row in df_res_excel.iterrows():
+                    fl = str(row['층수']).strip() if pd.notna(row['층수']) else '1층'
+                    nm = str(row['이름']).strip()
+                    m = str(row['주식형태']).strip() if pd.notna(row['주식형태']) else '일반밥'
+                    s = str(row['반찬형태']).strip() if pd.notna(row['반찬형태']) else '일반찬'
+                    k = str(row['김치형태']).strip() if pd.notna(row['김치형태']) else '포기(일반) 빨간김치'
+                    nt = str(row['특이사항(양 조절 등)']).strip() if pd.notna(row['특이사항(양 조절 등)']) and str(row['특이사항(양 조절 등)']) != 'nan' else '없음'
+                    
+                    cursor.execute("""
+                        INSERT INTO residents (floor, room, name, meal, side, kimchi, note)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (fl, f"{fl[0]}01호", nm, m, s, k, nt))
+                    
+                conn.commit()
+                conn.close()
+                st.cache_data.clear()
+                st.balloons()
+                st.success("🎉 요양원 입소 어르신 49명의 실제 식이 현황이 중앙 DB에 성공적으로 저장되었습니다!")
+                st.rerun()
         with tab1:
             with st.form("add_resident_form"):
                 col_a, col_b, col_c = st.columns(3)
