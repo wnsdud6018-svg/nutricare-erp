@@ -658,65 +658,43 @@ else:
         st.dataframe(df_res[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
 
     elif menu == "3. [4층 주간보호] 날짜별 출석부 & 식사 등록":
-        st.title("🚌 4층 주간보호 센터 날짜별 출석부 & 식사 체크 (오전 10시 입력)")
-        st.caption("달력으로 일자를 지정하여 [출석], [중식], [석식], [익일 조식] 식수를 체크하고 확정합니다.")
+        st.title("🚌 4층 주간보호 센터 독립 운영 현황판")
+        st.caption("매일 수행하는 [일일 출석부]와 어르신 기본 정보를 수정하는 [마스터 디렉토리]가 안전하게 분리된 화면입니다.")
         st.markdown("---")
 
-        col_date1, col_date2 = st.columns([1, 2])
-        # 주간보호 엑셀 파일 업로드 일괄 동기화 모듈
-        
-        with st.expander("📥 [실측 데이터] 4층 주간보호 어르신 엑셀 명단 DB 자동 동기화"):
-            up_dc_file = st.file_uploader("연세노인요양원 인원 및 특이사항.xlsx 파일을 올려주세요", type=["xlsx"], key="up_dc_excel")
-            if up_dc_file is not None and st.button("🚀 25명 주간보호 마스터 DB 일괄 저장/갱신", type="primary"):
-                df_dc_excel = pd.read_excel(up_dc_file, sheet_name="주간보호 인원수").dropna(subset=['이름'])
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("TRUNCATE TABLE daycare_master RESTART IDENTITY;") # 기존 임시 데이터 초기화
-                
-                for idx, row in df_dc_excel.iterrows():
-                    nm = str(row['이름']).strip()
-                    m = str(row['주식형태']).strip() if pd.notna(row['주식형태']) else '일반밥'
-                    s = str(row['반찬형태']).strip() if pd.notna(row['반찬형태']) else '일반찬'
-                    k = str(row['김치형태']).strip() if pd.notna(row['김치형태']) else '포기(일반) 빨간김치'
-                    nt = str(row['특이사항(양 조절 등)']).strip() if pd.notna(row['특이사항(양 조절 등)']) and str(row['특이사항(양 조절 등)']) != 'nan' else '없음'
-                    
-                    cursor.execute("""
-                        INSERT INTO daycare_master (name, meal, side, kimchi, note)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (nm, m, s, k, nt))
-                    
-                conn.commit()
-                conn.close()
-                st.cache_data.clear()
-                st.balloons()
-                st.success("🎉 4층 주간보호 어르신 25명의 마스터 데이터가 성공적으로 저장되었습니다!")
-                st.rerun()
-        with col_date1:
-            target_date = st.date_input("📅 출석 및 식사 작성 일자 선택", datetime.today())
-            target_date_str = target_date.strftime('%Y-%m-%d')
-        with col_date2:
-            st.write("")
-            st.info(f"💡 선택 작성 일자: **{target_date_str}** | 복지사 선생님 입력 전용 화면")
+        tab_daily, tab_master = st.tabs([
+            "📝 [매일 업무] 날짜별 출석 & 식수 체크부", 
+            "🗂️ [마스터 관리] 어르신 명단 등록·식이 수정 & 엑셀 동기화"
+        ])
 
-        df_attendance = load_daycare_attendance_by_date(target_date_str)
+        # ---------------------------------------------------------
+        # TAB 1: [매일 업무] 날짜별 출석 & 식수 체크부 (복지사 전용)
+        # ---------------------------------------------------------
+        with tab_daily:
+            col_date1, col_date2 = st.columns([1, 2])
+            with col_date1:
+                target_date = st.date_input("📅 출석 및 식사 작성 일자 선택", datetime.today(), key="daily_check_date")
+                target_date_str = target_date.strftime('%Y-%m-%d')
+            with col_date2:
+                st.write("")
+                st.info(f"💡 선택 작성 일자: **{target_date_str}** | 현장 복지사 선생님 출석/식수 입력 전용")
 
-        c_att = len(df_attendance[df_attendance["출석여부"] == True])
-        c_lunch = len(df_attendance[df_attendance["중식"] == True])
-        c_dinner = len(df_attendance[df_attendance["석식"] == True])
-        c_next_b = len(df_attendance[df_attendance["익일조식"] == True])
+            # 출석부 불러오기 (마스터에 새로 추가된 어르신이 있다면 출석부에 자동으로 누락 없이 통합 병합)
+            df_attendance = load_daycare_attendance_by_date(target_date_str)
 
-        col_c1, col_c2, col_c3, col_c4 = st.columns(4)
-        col_c1.metric("오늘 등원 인원", f"{c_att} 명")
-        col_c2.metric("중식 신청 인원", f"{c_lunch} 명")
-        col_c3.metric("석식 신청 인원", f"{c_dinner} 명")
-        col_c4.metric("익일 조식 신청 인원", f"{c_next_b} 명")
+            c_att = len(df_attendance[df_attendance["출석여부"] == True])
+            c_lunch = len(df_attendance[df_attendance["중식"] == True])
+            c_dinner = len(df_attendance[df_attendance["석식"] == True])
+            c_next_b = len(df_attendance[df_attendance["익일조식"] == True])
 
-        st.markdown("---")
+            col_c1, col_c2, col_c3, col_c4 = st.columns(4)
+            col_c1.metric("오늘 등원 인원", f"{c_att} 명")
+            col_c2.metric("중식 신청 인원", f"{c_lunch} 명")
+            col_c3.metric("석식 신청 인원", f"{c_dinner} 명")
+            col_c4.metric("익일 조식 신청 인원", f"{c_next_b} 명")
 
-        tab_dc1, tab_dc2 = st.tabs(["📝 날짜별 출석 & 식사(중식/석식/익일조식) 체크", "➕ 주간보호 어르신 마스터 등록/수정/삭제"])
-
-        with tab_dc1:
-            st.subheader(f"📝 [{target_date_str}] 주간보호 출석 및 식사 체크")
+            st.markdown("---")
+            st.subheader(f"📝 [{target_date_str}] 주간보호 실시간 출석 및 식사 체크")
             
             edited_attendance = st.data_editor(
                 df_attendance[["id", "성함", "출석여부", "중식", "석식", "익일조식", "주식", "부식", "김치", "특이사항"]],
@@ -726,7 +704,7 @@ else:
             )
 
             st.write("")
-            if st.button("✅ 체크 확인 및 저장 완료 (1클릭 DB 저장)", type="primary", use_container_width=True, key="save_bottom"):
+            if st.button("✅ 체크 확인 및 저장 완료 (1클릭 DB 저장)", type="primary", use_container_width=True, key="save_attendance_btn"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 for idx, row in edited_attendance.iterrows():
@@ -739,77 +717,101 @@ else:
                 conn.close()
                 st.cache_data.clear()
                 st.balloons()
-                st.success(f"🎉 저장이 완료되었습니다! ({target_date_str} 출석 및 식수가 DB에 완벽히 저장되었습니다.)")
+                st.success(f"🎉 [{target_date_str}] 출석 및 식수 데이터가 DB에 완벽히 저장되었습니다!")
+                st.rerun()
 
             st.markdown("---")
-            st.subheader(f"🔍 [{target_date_str}] 식사별 2차 교차 확인 현황판 (실시간 요약)")
-            st.caption("선생님이 저장한 식수가 정상적으로 반영되었는지 명단과 인원수를 바로 확인하세요.")
-
-            df_check = load_daycare_attendance_by_date(target_date_str)
+            st.subheader(f"🔍 [{target_date_str}] 식사별 교차 요약 현황판")
             
+            df_check = load_daycare_attendance_by_date(target_date_str)
             lunch_users = df_check[df_check["중식"] == True]["성함"].tolist()
             dinner_users = df_check[df_check["석식"] == True]["성함"].tolist()
             breakfast_users = df_check[df_check["익일조식"] == True]["성함"].tolist()
 
             col_v1, col_v2, col_v3 = st.columns(3)
-
             with col_v1:
-                st.info(f"🥣 **[중식] 신청 어르신 (총 {len(lunch_users)}명)**")
-                if len(lunch_users) > 0:
-                    st.write("• " + "\n• ".join(lunch_users))
-                else:
-                    st.caption("신청한 어르신이 없습니다.")
-
+                st.info(f"🥣 **[중식] 신청 어르신 ({len(lunch_users)}명)**\n\n• " + "\n• ".join(lunch_users) if lunch_users else "신청자 없음")
             with col_v2:
-                st.warning(f"🌙 **[석식] 신청 어르신 (총 {len(dinner_users)}명)**")
-                if len(dinner_users) > 0:
-                    st.write("• " + "\n• ".join(dinner_users))
-                else:
-                    st.caption("신청한 어르신이 없습니다.")
-
+                st.warning(f"🌙 **[석식] 신청 어르신 ({len(dinner_users)}명)**\n\n• " + "\n• ".join(dinner_users) if dinner_users else "신청자 없음")
             with col_v3:
-                st.success(f"🌅 **[익일 조식] 신청 어르신 (총 {len(breakfast_users)}명)**")
-                if len(breakfast_users) > 0:
-                    st.write("• " + "\n• ".join(breakfast_users))
-                else:
-                    st.caption("신청한 어르신이 없습니다.")
+                st.success(f"🌅 **[익일 조식] 신청 어르신 ({len(breakfast_users)}명)**\n\n• " + "\n• ".join(breakfast_users) if breakfast_users else "신청자 없음")
 
-        with tab_dc2:
+        # ---------------------------------------------------------
+        # TAB 2: [마스터 관리] 어르신 등록·식이 수정 & 엑셀 동기화 (관리자 전용)
+        # ---------------------------------------------------------
+        with tab_master:
+            st.subheader("🗂️ 주간보호 수급자 마스터 명단 관리")
+            st.caption("어르신의 기본적인 주식/부식/김치 형태 및 특이사항을 등록 및 수정하는 공간입니다.")
+
+            # 1. 엑셀 일괄 동기화 구역
+            with st.expander("📥 25명 실측 엑셀 파일 일괄 DB 동기화"):
+                up_dc_file = st.file_uploader("연세노인요양원 인원 및 특이사항.xlsx 파일을 선택하세요", type=["xlsx"], key="up_dc_master_excel")
+                if up_dc_file is not None and st.button("🚀 25명 주간보호 마스터 DB 일괄 저장/갱신", type="primary"):
+                    df_dc_excel = pd.read_excel(up_dc_file, sheet_name="주간보호 인원수").dropna(subset=['이름'])
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    
+                    cursor.execute("TRUNCATE TABLE daycare_master RESTART IDENTITY;")
+                    for idx, row in df_dc_excel.iterrows():
+                        nm = str(row['이름']).strip()
+                        m = str(row['주식형태']).strip() if pd.notna(row['주식형태']) else '일반밥'
+                        s = str(row['반찬형태']).strip() if pd.notna(row['반찬형태']) else '일반찬'
+                        k = str(row['김치형태']).strip() if pd.notna(row['김치형태']) else '포기(일반) 빨간김치'
+                        nt = str(row['특이사항(양 조절 등)']).strip() if pd.notna(row['특이사항(양 조절 등)']) and str(row['특이사항(양 조절 등)']) != 'nan' else '없음'
+                        
+                        cursor.execute("""
+                            INSERT INTO daycare_master (name, meal, side, kimchi, note)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (nm, m, s, k, nt))
+                    
+                    # 오늘 날짜 출석부도 25명 전체 목록으로 재동기화
+                    cursor.execute("DELETE FROM daycare_daily_attendance WHERE att_date = %s;", (target_date_str,))
+                    conn.commit()
+                    conn.close()
+                    st.cache_data.clear()
+                    st.balloons()
+                    st.success("🎉 주간보호 25명 어르신 마스터 데이터 및 당일 출석부가 완벽히 동기화되었습니다!")
+                    st.rerun()
+
+            st.markdown("---")
             df_dc_master = load_daycare_master()
             col_d1, col_d2 = st.columns(2)
 
+            # 2. 신규 개별 어르신 등록
             with col_d1:
-                st.subheader("➕ 신규 주간보호 어르신 마스터 등록")
+                st.subheader("➕ 신규 주간보호 어르신 등록")
                 with st.form("add_daycare_master_form"):
-                    dc_name = st.text_input("성함", "김 주 간")
+                    dc_name = st.text_input("성함", "홍 길 동")
                     meal_opts = ["일  반  밥", "🌾 잡  곡  밥", "🥣 일  반  죽", "🎃 호  박  죽", "🥗 야  채  죽", "🥛 미      음", "❌ 금      식"]
-                    dc_meal = st.selectbox("🍚 주식", meal_opts)
+                    dc_meal = st.selectbox("🍚 주식 형태", meal_opts)
                     side_opts = ["일  반  찬", "★ 다 진 찬", "♥ 갈  찬"]
-                    dc_side = st.selectbox("🥗 부식(찬)", side_opts)
-                    kimchi_opts = ["빨 간 김 치", "백  김  치", "★ 다진김치(빨간)", "☆ 다진김치(백)", "♥ 간김치(빨간)", "♡ 간김치(백)", "없      음"]
-                    dc_kimchi = st.selectbox("🥬 김치", kimchi_opts)
-                    dc_note = st.text_input("특이사항 (송영 차수 등)", "송영 1차")
+                    dc_side = st.selectbox("🥗 부식(찬) 형태", side_opts)
+                    kimchi_opts = ["포기(일반) 빨간김치", "포기(일반) 백김치", "다진 빨간김치", "다진 백김치", "간 빨간김치", "간 백김치", "없      음"]
+                    dc_kimchi = st.selectbox("🥬 김치 형태", kimchi_opts)
+                    dc_note = st.text_input("특이사항 (양 조절, 송영 등)", "없음")
 
-                    submit_dc = st.form_submit_button("주간보호 마스터 승인 요청 전송", type="primary", use_container_width=True)
+                    submit_dc = st.form_submit_button("신규 어르신 마스터 등록", type="primary", use_container_width=True)
                     if submit_dc:
                         conn = get_db_connection()
                         cursor = conn.cursor()
-                        new_data_str = json.dumps({"name": dc_name, "meal": dc_meal, "side": dc_side, "kimchi": dc_kimchi, "note": dc_note}, ensure_ascii=False)
                         cursor.execute("""
-                            INSERT INTO pending_approvals (requester, request_type, target_table, new_data, request_time)
-                            VALUES (%s, 'INSERT', 'daycare_master', %s, %s)
-                        """, (user['name'], new_data_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                            INSERT INTO daycare_master (name, meal, side, kimchi, note)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (dc_name, dc_meal, dc_side, dc_kimchi, dc_note))
                         conn.commit()
                         conn.close()
-                        st.info(f"✅ 주간보호 [{dc_name}] 님 신규 등록 요청이 시설장님 결재함으로 전송되었습니다.")
+                        st.cache_data.clear()
+                        st.success(f"✅ [{dc_name}] 어르신이 마스터 명단에 신규 추가되었습니다!")
+                        st.rerun()
 
+            # 3. 개별 어르신 식이 수정 및 삭제
             with col_d2:
-                st.subheader("✏️ 마스터 정보 수정 및 🗑️ 삭제")
+                st.subheader("✏️ 기존 어르신 식이 수정 및 삭제")
                 if len(df_dc_master) == 0:
                     st.info("등록된 주간보호 어르신이 없습니다.")
                 else:
                     dc_names = [f"{row['성함']} (ID:{row['id']})" for idx, row in df_dc_master.iterrows()]
-                    selected_dc_str = st.selectbox("대상 주간보호 어르신 선택", dc_names)
+                    selected_dc_str = st.selectbox("수정/삭제 대상 어르신 선택", dc_names)
                     dc_idx = dc_names.index(selected_dc_str)
                     dc_row = df_dc_master.iloc[dc_idx]
                     dc_id = int(dc_row["id"])
@@ -821,32 +823,29 @@ else:
                         edc_kimchi = st.selectbox("🥬 김치", kimchi_opts, index=kimchi_opts.index(dc_row["김치"]) if dc_row["김치"] in kimchi_opts else 0)
                         edc_note = st.text_input("특이사항", dc_row["특이사항"])
 
-                        update_dc_btn = st.form_submit_button("수정 승인 요청 전송", use_container_width=True)
+                        update_dc_btn = st.form_submit_button("어르신 정보 수정 저장", use_container_width=True)
                         if update_dc_btn:
                             conn = get_db_connection()
                             cursor = conn.cursor()
-                            old_str = json.dumps(dict(dc_row), ensure_ascii=False)
-                            new_str = json.dumps({"name": edc_name, "meal": edc_meal, "side": edc_side, "kimchi": edc_kimchi, "note": edc_note}, ensure_ascii=False)
                             cursor.execute("""
-                                INSERT INTO pending_approvals (requester, request_type, target_table, target_id, old_data, new_data, request_time)
-                                VALUES (%s, 'UPDATE', 'daycare_master', %s, %s, %s, %s)
-                            """, (user['name'], dc_id, old_str, new_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                                UPDATE daycare_master SET name=%s, meal=%s, side=%s, kimchi=%s, note=%s WHERE id=%s
+                            """, (edc_name, edc_meal, edc_side, edc_kimchi, edc_note, dc_id))
                             conn.commit()
                             conn.close()
-                            st.info("📩 주간보호 마스터 수정 요청이 시설장님 결재함으로 전송되었습니다.")
+                            st.cache_data.clear()
+                            st.success(f"✅ [{edc_name}] 어르신 정보가 정상 수정되었습니다.")
+                            st.rerun()
 
                     st.markdown("---")
-                    if st.button(f"🗑️ [{dc_row['성함']}] 주간보호 어르신 삭제 요청", type="primary", use_container_width=True):
+                    if st.button(f"🗑️ [{dc_row['성함']}] 어르신 영구 삭제", type="primary", use_container_width=True):
                         conn = get_db_connection()
                         cursor = conn.cursor()
-                        old_str = json.dumps(dict(dc_row), ensure_ascii=False)
-                        cursor.execute("""
-                            INSERT INTO pending_approvals (requester, request_type, target_table, target_id, old_data, new_data, request_time)
-                            VALUES (%s, 'DELETE', 'daycare_master', %s, %s, '주간보호 삭제 요청', %s)
-                        """, (user['name'], dc_id, old_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                        cursor.execute("DELETE FROM daycare_master WHERE id=%s", (dc_id,))
                         conn.commit()
                         conn.close()
-                        st.info(f"📩 [{dc_row['성함']}] 삭제 요청이 시설장님 결재함으로 전송되었습니다.")
+                        st.cache_data.clear()
+                        st.warning(f"❌ [{dc_row['성함']}] 어르신이 마스터 명단에서 삭제되었습니다.")
+                        st.rerun()
 
     elif menu == "4. 식수 & 배식지시서 (히스토리)":
         st.title("📋 식수 집계표 및 조리실 배식지시서")
