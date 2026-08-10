@@ -826,14 +826,29 @@ else:
         active_daycare["층"] = "4층"
         active_daycare["호실"] = "주간"
         full_df = pd.concat([df_res, active_daycare[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]]], ignore_index=True)
-        elif menu == "6. 주간 식단표 관리 (엑셀 연동 & 영양판정)":
+        
+        if st.button("🚀 전체 명찰 카드(ZIP) 다운로드 준비", type="primary", use_container_width=True):
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                for idx, row in full_df.iterrows():
+                    img = generate_card_image(row["층"], row["성함"], row["주식"], row["부식"], row["김치"])
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format="PNG")
+                    zip_file.writestr(f"명찰_{row['층']}_{row['호실']}_{row['성함']}.png", img_byte_arr.getvalue())
+
+            st.download_button(
+                label="📦 명찰 카드 압축파일(.zip) 다운로드",
+                data=zip_buffer.getvalue(),
+                file_name="명찰카드.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+
+    elif menu == "6. 주간 식단표 관리 (엑셀 연동 & 영양판정)":
         st.title("📅 웹 네이티브 주간 식단표 & 7대 법정서류 OSMU 자동화 통합 엔진")
         st.caption("ERP 웹 화면에서 식단표를 1회 입력·수정하면 조리계획서·보존식일지·검식일지·게시용 식단표가 실시간 연동 생성됩니다.")
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # 세션 데이터 초기화 (기본 주간 식단 데이터)
-        # ---------------------------------------------------------
         if "erp_weekly_schedule" not in st.session_state:
             st.session_state["erp_weekly_schedule"] = pd.DataFrame([
                 {"구분": "월요일", "아침": "흰밥,잡곡밥 / 땅콩죽 / 호박잎된장국 / 떡갈비조림 / 콩나물무침(하얀) / 깻잎지 / 배추김치", "점심": "흰밥,잡곡밥 / 고구마죽 / 홍합탕 / 고구마닭조림 / 우엉조림 / 들기름무나물 / 배추김치", "저녁": "흰밥/잡곡밥 / 미역죽 / 부추계란국 / 해물완자전 / 게살오이냉채 / 열무무침 / 배추김치", "간식": "바나나"},
@@ -845,9 +860,6 @@ else:
                 {"구분": "일요일", "아침": "흰밥,잡곡밥 / 브로콜리죽 / 소고기미역국 / 계란장조림 / 콩나물무침(빨간) / 조미김 / 배추김치", "점심": "흰밥,잡곡밥 / 닭살죽 / 맑은토란국 / 참치두부조림 / 느타리버섯볶음 / 양배추무침 / 배추김치", "저녁": "흰밥/잡곡밥 / 녹두죽 / 햄김치찌개 / 메란곤약조림 / 비름나물 / 숙주나물 / 배추김치", "간식": "아몬드두유"}
             ])
 
-        # ---------------------------------------------------------
-        # 탭 구성 (OSMU 5대 화면)
-        # ---------------------------------------------------------
         tab_write, tab_cook_plan, tab_retention, tab_inspection, tab_export = st.tabs([
             "✍️ [1] ERP 주간 식단표 입력·수정", 
             "🍳 [2] 조리실 조리계획서 (자동 매핑)", 
@@ -856,9 +868,6 @@ else:
             "📦 [5] 7개 시트 통합 엑셀 추출"
         ])
 
-        # ---------------------------------------------------------
-        # TAB 1: ERP 주간 식단표 입력·수정
-        # ---------------------------------------------------------
         with tab_write:
             st.subheader("✍️ ERP 중앙 주간 식단표 실시간 작성기")
             st.caption("여기서 메뉴를 입력하거나 수정하면 연동된 모든 서류에 0.1초 만에 즉시 반영됩니다.")
@@ -872,9 +881,6 @@ else:
             st.session_state["erp_weekly_schedule"] = edited_sched
             st.success("✅ 입력하신 주간 식단표가 중앙 DB 및 하위 6개 법정 서류에 실시간 연동 반영 중입니다.")
 
-        # ---------------------------------------------------------
-        # TAB 2: 조리실 조리계획서 (자동 매핑)
-        # ---------------------------------------------------------
         with tab_cook_plan:
             st.subheader("🍳 조리실 실시간 실행 조리계획서")
             st.caption("주간 식단표 메뉴를 기반으로 조리실 재료 필요량 및 조리 지침을 자동 구성합니다.")
@@ -899,9 +905,6 @@ else:
             ])
             st.dataframe(cook_notes, use_container_width=True)
 
-        # ---------------------------------------------------------
-        # TAB 3: 보존식 관리일지 (144시간 자동시산)
-        # ---------------------------------------------------------
         with tab_retention:
             st.subheader("🏷️ 보존식 기록표 및 법정 관리일지 (144시간 자동 시산)")
             st.caption("식품위생법에 따라 반입 시간 기준 정확히 144시간(6일) 후 폐기 예정 일시를 초 단위까지 자동 시산합니다.")
@@ -921,9 +924,6 @@ else:
             ])
             st.dataframe(ret_df, use_container_width=True)
 
-        # ---------------------------------------------------------
-        # TAB 4: 주간 검식일지 & 게시용 2종
-        # ---------------------------------------------------------
         with tab_inspection:
             st.subheader("📋 주간 검식일지 & 게시용 식단표 뷰")
             
@@ -946,28 +946,18 @@ else:
                 st.write("### 🚌 4층 주간보호센터 전용 게시용 주간 식단표")
                 st.dataframe(edited_sched[["구분", "점심", "간식"]], use_container_width=True)
 
-        # ---------------------------------------------------------
-        # TAB 5: 7개 시트 완벽 통합 엑셀 추출 (Download)
-        # ---------------------------------------------------------
         with tab_export:
             st.subheader("📦 법정 제출용 7개 시트 통합 엑셀(.xlsx) 추출")
             st.caption("ERP 웹에서 작성된 데이터가 엑셀 파일 1권(7개 시트 완벽 탑재)으로 변환되어 즉시 다운로드됩니다.")
             
             buf_export = io.BytesIO()
             with pd.ExcelWriter(buf_export, engine='openpyxl') as writer:
-                # 1. 식단표
                 edited_sched.to_excel(writer, index=False, sheet_name='식단표')
-                # 2. 조리계획서
                 pd.DataFrame([{"요일": "월요일", "아침": row_c['아침'], "점심": row_c['점심'], "저녁": row_c['저녁']}]).to_excel(writer, index=False, sheet_name='조리계획서')
-                # 3. 보존식
                 ret_df.to_excel(writer, index=False, sheet_name='보존식')
-                # 4. 게시용
                 edited_sched[["구분", "아침", "점심", "저녁", "간식"]].to_excel(writer, index=False, sheet_name='게시용')
-                # 5. 게시용_주간보호
                 edited_sched[["구분", "점심", "간식"]].to_excel(writer, index=False, sheet_name='게시용_주간보호')
-                # 6. 보존식관리일지(7일)
                 ret_df.to_excel(writer, index=False, sheet_name='보존식관리일지(7일)')
-                # 7. 주간검식일지(7일)
                 pd.DataFrame([{"구분": "월요일", "검식평가": "적합", "온도": "적합"}]).to_excel(writer, index=False, sheet_name='주간검식일지(7일)')
 
             st.download_button(
@@ -978,82 +968,6 @@ else:
                 type="primary",
                 use_container_width=True
             )
-        if st.button("🚀 전체 명찰 카드(ZIP) 다운로드 준비", type="primary", use_container_width=True):
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                for idx, row in full_df.iterrows():
-                    img = generate_card_image(row["층"], row["성함"], row["주식"], row["부식"], row["김치"])
-                    img_byte_arr = io.BytesIO()
-                    img.save(img_byte_arr, format="PNG")
-                    zip_file.writestr(f"명찰_{row['층']}_{row['호실']}_{row['성함']}.png", img_byte_arr.getvalue())
-
-            st.download_button(label="📦 명찰 카드 압축파일(.zip) 다운로드", data=zip_buffer.getvalue(), file_name="명찰카드.zip", mime="application/zip", use_container_width=True)
-
-    elif menu == "6. 주간 식단표 관리 (엑셀 연동 & 영양판정)":
-        st.title("📅 주간 식단표 & 🍳 조리계획서 실시간 자동 연동 모듈")
-        st.caption("엑셀 파일 업로드 1회로 식단표와 조리실 조리계획서(재료명·총량·비고)가 100% 자동 매핑됩니다.")
-        st.markdown("---")
-
-        # ---------------------------------------------------------
-        # 엑셀 파일 자동 파싱 함수
-        # ---------------------------------------------------------
-        def parse_weekly_excel_and_link(uploaded_file):
-            xls = pd.ExcelFile(uploaded_file)
-            
-            # 1. [식단표] 시트 파싱
-            df_menu_raw = pd.read_excel(xls, sheet_name="식단표")
-            days = [str(df_menu_raw.iloc[1, c]).strip() for c in range(1, 8)]
-            dates = [str(df_menu_raw.iloc[2, c]).split()[0] if pd.notna(df_menu_raw.iloc[2, c]) else "" for c in range(1, 8)]
-            
-            menu_records = []
-            current_meal = "아침"
-            for r in range(3, len(df_menu_raw)):
-                cell_0 = df_menu_raw.iloc[r, 0]
-                if pd.notna(cell_0) and str(cell_0).strip() in ["아침", "점심", "간식", "주간", "저녁"]:
-                    current_meal = str(cell_0).strip()
-                    
-                for col_idx in range(1, 8):
-                    dish = df_menu_raw.iloc[r, col_idx]
-                    if pd.notna(dish) and str(dish).strip() != "":
-                        menu_records.append({
-                            "요일": days[col_idx - 1],
-                            "날짜": dates[col_idx - 1],
-                            "끼니": current_meal,
-                            "음식명": str(dish).strip()
-                        })
-            
-            # 2. [조리계획서] 시트 파싱
-            df_plan_raw = pd.read_excel(xls, sheet_name="조리계획서")
-            plan_records = []
-            current_day, current_meal = "월요일", "아침"
-            
-            for r in range(len(df_plan_raw)):
-                row_vals = df_plan_raw.iloc[r].tolist()
-                val_0 = str(row_vals[0]).strip() if pd.notna(row_vals[0]) else ""
-                
-                if any(d in val_0 for d in ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]):
-                    current_day = val_0
-                    continue
-                    
-                if val_0 in ["아  침", "아침", "점 심", "점심", "간식", "저 녁", "저녁"]:
-                    current_meal = val_0.replace(" ", "")
-                    
-                dish_name = str(row_vals[1]).strip() if len(row_vals) > 1 and pd.notna(row_vals[1]) else ""
-                ingredient = str(row_vals[2]).strip() if len(row_vals) > 2 and pd.notna(row_vals[2]) else ""
-                quantity = str(row_vals[3]).strip() if len(row_vals) > 3 and pd.notna(row_vals[3]) else ""
-                note = str(row_vals[4]).strip() if len(row_vals) > 4 and pd.notna(row_vals[4]) else ""
-                
-                if dish_name != "" and dish_name != "음식명":
-                    plan_records.append({
-                        "요일": current_day,
-                        "끼니": current_meal,
-                        "음식명": dish_name,
-                        "재료명": ingredient if ingredient != "nan" else "",
-                        "총량(kg)": quantity if quantity != "nan" else "",
-                        "비고": note if note != "nan" else ""
-                    })
-                    
-            return pd.DataFrame(menu_records), pd.DataFrame(plan_records)
 
         # ---------------------------------------------------------
         # 화면 구성 (3개 탭)
