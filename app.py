@@ -170,15 +170,47 @@ def load_daycare_master():
     return pd.read_sql(query, engine)
 
 def load_daycare_attendance_by_date(selected_date_str):
+    master_df = load_daycare_master()
+    if len(master_df) == 0:
+        return pd.DataFrame(columns=["id", "성함", "출석여부", "중식", "석식", "익일조식", "주식", "부식", "김치", "특이사항"])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 해당 날짜 출석부에 이미 들어가 있는 master_id 조회
+    cursor.execute("SELECT master_id FROM daycare_daily_attendance WHERE att_date = %s", (selected_date_str,))
+    existing_ids = [r[0] for r in cursor.fetchall()]
+
+    # 마스터 명단에는 있지만 출석부에는 없는 어르신 자동 인입 (25명 완전 동기화)
+    for idx, row in master_df.iterrows():
+        if row['id'] not in existing_ids:
+            cursor.execute("""
+                INSERT INTO daycare_daily_attendance 
+                (att_date, master_id, name, attended, lunch_requested, dinner_requested, next_breakfast_requested, meal, side, kimchi, note)
+                VALUES (%s, %s, %s, 1, 1, 0, 0, %s, %s, %s, %s)
+            """, (selected_date_str, row['id'], row['성함'], row['주식'], row['부식'], row['김치'], row['특이사항']))
+            
+    conn.commit()
+    conn.close()
+
+    # 최종 출석부 데이터 로드
     query = """
-        SELECT id, att_date, master_id, name AS 성함, 
-               attended AS 출석여부, lunch_requested AS 중식, 
-               dinner_requested AS 석식, next_breakfast_requested AS 익일조식,
-               meal AS 주식, side AS 부식, kimchi AS 김치, note AS 특이사항 
-        FROM daycare_daily_attendance 
-        WHERE att_date=%(date)s
+        SELECT a.id, a.att_date, a.master_id, a.name AS 성함, 
+               a.attended AS 출석여부, a.lunch_requested AS 중식, 
+               a.dinner_requested AS 석식, a.next_breakfast_requested AS 익일조식,
+               a.meal AS 주식, a.side AS 부식, a.kimchi AS 김치, a.note AS 특이사항 
+        FROM daycare_daily_attendance a
+        INNER JOIN daycare_master m ON a.master_id = m.id
+        WHERE a.att_date = %(date)s
+        ORDER BY m.id ASC
     """
     df = pd.read_sql(query, engine, params={"date": selected_date_str})
+
+    df["출석여부"] = df["출석여부"].astype(bool)
+    df["중식"] = df["중식"].astype(bool)
+    df["석식"] = df["석식"].astype(bool)
+    df["익일조식"] = df["익일조식"].astype(bool)
+    return df
     
     if len(df) == 0:
         master_df = load_daycare_master()
