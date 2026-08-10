@@ -838,7 +838,7 @@ else:
 
             st.download_button(label="📦 명찰 카드 압축파일(.zip) 다운로드", data=zip_buffer.getvalue(), file_name="명찰카드.zip", mime="application/zip", use_container_width=True)
 
-  elif menu == "6. 주간 식단표 관리 (엑셀 연동 & 영양판정)":
+    elif menu == "6. 주간 식단표 관리 (엑셀 연동 & 영양판정)":
         st.title("📅 주간 식단표 & 🍳 조리계획서 실시간 자동 연동 모듈")
         st.caption("엑셀 파일 업로드 1회로 식단표와 조리실 조리계획서(재료명·총량·비고)가 100% 자동 매핑됩니다.")
         st.markdown("---")
