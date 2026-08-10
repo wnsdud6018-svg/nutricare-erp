@@ -820,27 +820,106 @@ else:
 
     elif menu == "4. 식수 & 배식지시서 (히스토리)":
         st.title("📋 식수 집계표 및 조리실 배식지시서")
+        st.caption("수급자 식이 형태를 정규화 집계하고, 합계 행·열이 추가된 배식지시서를 인쇄 및 추출합니다.")
+        st.markdown("---")
+
         today_str = datetime.today().strftime('%Y-%m-%d')
         df_res = load_residents()
         df_daycare = load_daycare_attendance_by_date(today_str)
+        
         active_daycare = df_daycare[df_daycare["출석여부"] == True].copy()
         active_daycare["층"] = "4층 (주간보호)"
         active_daycare["호실"] = "데이케어"
+        
         full_df = pd.concat([df_res, active_daycare[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]]], ignore_index=True)
+
+        # ---------------------------------------------------------
+        # 1. 식이 정규화 (띄어쓰기 및 이모지 차이로 인한 집계 쪼개짐 방지)
+        # ---------------------------------------------------------
+        import re
+        def clean_meal_str(val):
+            if not val or pd.isna(val): return "일반밥"
+            s = str(val).strip()
+            ns = re.sub(r'[\s\W_]+', '', s)
+            if "잡곡" in ns or "잡곡" in s: return "잡곡밥"
+            if "일반죽" in ns or "죽식" in ns or "죽대접" in ns: return "일반죽"
+            if "호박" in ns: return "호박죽"
+            if "야채" in ns: return "야채죽"
+            if "미음" in ns: return "미음"
+            if "금식" in ns: return "금식"
+            if "일반" in ns or "밥" in ns: return "일반밥"
+            return s
+
+        def clean_side_str(val):
+            if not val or pd.isna(val): return "일반찬"
+            s = str(val).strip()
+            ns = re.sub(r'[\s\W_]+', '', s)
+            if "다진" in ns or "★" in s: return "다진찬"
+            if "갈" in ns or "♥" in s: return "갈찬"
+            if "일반" in ns: return "일반찬"
+            return s
+
+        def clean_kimchi_str(val):
+            if not val or pd.isna(val): return "포기(일반) 빨간김치"
+            s = str(val).strip()
+            if "없" in s: return "없음"
+            is_white = "백" in s or "☆" in s or "♡" in s
+            if "다진" in s or "★" in s or "☆" in s:
+                return "다진 백김치" if is_white else "다진 빨간김치"
+            elif "간김치" in s or "간 김치" in s or "♥" in s or "♡" in s or s.startswith("간"):
+                if "포기" in s or ("빨간" in s and "다진" not in s and "♥" not in s and "♡" not in s and not s.startswith("간")):
+                    return "포기(일반) 백김치" if is_white else "포기(일반) 빨간김치"
+                return "간 백김치" if is_white else "간 빨간김치"
+            else:
+                return "포기(일반) 백김치" if is_white else "포기(일반) 빨간김치"
+
+        full_df["주식"] = full_df["주식"].apply(clean_meal_str)
+        full_df["부식"] = full_df["부식"].apply(clean_side_str)
+        full_df["김치"] = full_df["김치"].apply(clean_kimchi_str)
+
+        # ---------------------------------------------------------
+        # 2. 피벗 집계표 산출 (합계 행 및 합계 열 자동 생성)
+        # ---------------------------------------------------------
+        pivot_meal = pd.pivot_table(full_df, index="층", columns="주식", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
+        pivot_side = pd.pivot_table(full_df, index="층", columns="부식", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
+        pivot_kimchi = pd.pivot_table(full_df, index="층", columns="김치", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
 
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
-            st.subheader("🍚 층별 주식 집계")
-            st.dataframe(pd.pivot_table(full_df, index="층", columns="주식", aggfunc="size", fill_value=0), use_container_width=True)
+            st.subheader("🍚 층별 주식 집계 (합계 포함)")
+            st.dataframe(pivot_meal, use_container_width=True)
         with col_p2:
-            st.subheader("🥗 층별 부식 집계")
-            st.dataframe(pd.pivot_table(full_df, index="층", columns="부식", aggfunc="size", fill_value=0), use_container_width=True)
+            st.subheader("🥗 층별 부식 집계 (합계 포함)")
+            st.dataframe(pivot_side, use_container_width=True)
         with col_p3:
-            st.subheader("🥬 층별 김치 집계")
-            st.dataframe(pd.pivot_table(full_df, index="층", columns="김치", aggfunc="size", fill_value=0), use_container_width=True)
+            st.subheader("🥬 층별 김치 집계 (합계 포함)")
+            st.dataframe(pivot_kimchi, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("📄 오늘의 통합 배식지시서 명단")
+
+        # ---------------------------------------------------------
+        # 3. 조리실 인쇄 및 다운로드 구역
+        # ---------------------------------------------------------
+        col_print1, col_print2 = st.columns([2, 1])
+        with col_print1:
+            st.subheader(f"📄 오늘의 통합 배식지시서 명단 (총 {len(full_df)}명)")
+        with col_print2:
+            buf_print = io.BytesIO()
+            with pd.ExcelWriter(buf_print, engine='openpyxl') as writer:
+                pivot_meal.to_excel(writer, sheet_name='주식집계표')
+                pivot_side.to_excel(writer, sheet_name='부식집계표')
+                pivot_kimchi.to_excel(writer, sheet_name='김치집계표')
+                full_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]].to_excel(writer, index=False, sheet_name='배식지시서명단')
+            
+            st.download_button(
+                label="🖨️ 조리실 인쇄용 배식지시서(Excel) 다운로드",
+                data=buf_print.getvalue(),
+                file_name=f"조리실_배식지시서_{today_str}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                use_container_width=True
+            )
+
         st.dataframe(full_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
 
     elif menu == "5. 명찰 카드 대량 출력":
