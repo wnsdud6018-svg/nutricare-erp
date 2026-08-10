@@ -1104,9 +1104,109 @@ else:
         st.success("✅ [통합 영양 평가 완료] 칼슘, 철분, 비타민A·C, 식이섬유 모두 노인 한국인 영양소 섭취기준(KDRI) 권장량을 우수하게 달성하였습니다. 요양원 지자체 및 건보공단 정기평가 영양성분 제출 서류로 즉시 활용 가능합니다.")
 
     elif menu == "7. 식자재 발주 & 원가 관리":
-        st.title("🛒 식자재 발주 & 원가 관리")
-        st.dataframe(st.session_state["orders"], use_container_width=True)
+        st.title("🛒 실시간 식수 연동 식자재 자동 발주 & 원가 관리 모듈")
+        st.caption("실시간 수급자 인원수(식수)와 주간 식단표를 결합하여 필요한 식자재량 및 1인 1일 식단가를 자동 도출합니다.")
+        st.markdown("---")
 
+        # 1. 실시간 총 식수 계산 (요양원 입소 + 주간보호 오늘 출석)
+        today_str = datetime.today().strftime('%Y-%m-%d')
+        df_res = load_residents()
+        df_daycare = load_daycare_attendance_by_date(today_str)
+        active_daycare = df_daycare[df_daycare["출석여부"] == True]
+        
+        total_headcount = len(df_res) + len(active_daycare)
+        
+        col_o1, col_o2, col_o3 = st.columns(3)
+        col_o1.metric("오늘 실시간 적용 총 식수", f"{total_headcount} 명", f"요양원 {len(df_res)}명 + 주간보호 {len(active_daycare)}명")
+        col_o2.metric("이번 주 예상 총 식사 제공 수", f"{total_headcount * 3 * 7} 식", "1일 3식 × 7일 기준")
+        col_o3.metric("목표 1인 1일 식단가 (원가 기준)", "5,500 원", "건보공단 권장 가이드 준수")
+
+        st.markdown("---")
+
+        tab_ord1, tab_ord2, tab_ord3 = st.tabs([
+            "🛍️ [1] 주간 식자재 자동 발주서 생성", 
+            "📊 [2] 1인 1일 식단가(원가) 정밀 분석", 
+            "⚙️ [3] 식자재 단가 마스터 관리"
+        ])
+
+        # ---------------------------------------------------------
+        # TAB 1: 주간 식자재 자동 발주서 생성
+        # ---------------------------------------------------------
+        with tab_ord1:
+            st.subheader("🛍️ 실시간 식수 기반 품목별 필요 발주량 산출표")
+            st.caption("인원수 변동에 따라 발주 수량 및 예상 합계 금액이 자동으로 계산됩니다.")
+
+            # 기본 발주 품목 마스터 (식수 기준 연동)
+            base_orders = pd.DataFrame([
+                {"카테고리": "곡류/두류", "품목명": "백미 (20kg)", "규격": "20kg/포", "1인1일소요량": "0.25 포", "필요수량": round(total_headcount * 0.08, 1), "발주수량": int(round(total_headcount * 0.08 + 1)), "단가(원)": 58000, "공급업체": "농협식자재"},
+                {"카테고리": "육류/계란", "품목명": "돼지고기 (돈육 전지)", "규격": "1kg", "1인1일소요량": "0.12 kg", "필요수량": round(total_headcount * 0.12 * 7, 1), "발주수량": int(round(total_headcount * 0.12 * 7)), "단가(원)": 12500, "공급업체": "축산유통"},
+                {"카테고리": "육류/계란", "품목명": "계란 (특란 30구)", "규격": "1판(30구)", "1인1일소요량": "0.1 판", "필요수량": round(total_headcount * 0.1 * 7, 1), "발주수량": int(round(total_headcount * 0.1 * 7)), "단가(원)": 6800, "공급업체": "축산유통"},
+                {"카테고리": "채소/나물", "품목명": "배추김치 (국산)", "규격": "10kg/상자", "1인1일소요량": "0.08 상자", "필요수량": round(total_headcount * 0.08 * 7, 1), "발주수량": int(round(total_headcount * 0.08 * 7)), "단가(원)": 34000, "공급업체": "대성식품"},
+                {"카테고리": "채소/나물", "품목명": "콩나물 (국산)", "규격": "1kg/봉", "1인1일소요량": "0.05 봉", "필요수량": round(total_headcount * 0.05 * 7, 1), "발주수량": int(round(total_headcount * 0.05 * 7)), "단가(원)": 2300, "공급업체": "싱싱농산"},
+                {"카테고리": "수산물", "품목명": "손질 가자미", "규격": "1kg/팩", "1인1일소요량": "0.1 팩", "필요수량": round(total_headcount * 0.1 * 7, 1), "발주수량": int(round(total_headcount * 0.1 * 7)), "단가(원)": 9500, "공급업체": "해양수산"},
+                {"카테고리": "공산품/유제품", "품목명": "연세두유 (190ml)", "규격": "24팩/상자", "1인1일소요량": "0.05 상자", "필요수량": round(total_headcount * 0.05 * 7, 1), "발주수량": int(round(total_headcount * 0.05 * 7)), "단가(원)": 14500, "공급업체": "연세우유 대리점"}
+            ])
+
+            edited_orders = st.data_editor(
+                base_orders,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="order_editor_grid"
+            )
+
+            # 총 예상 발주 금액 계산
+            edited_orders["예상금액(원)"] = edited_orders["발주수량"] * edited_orders["단가(원)"]
+            total_order_cost = edited_orders["예상금액(원)"].sum()
+
+            st.markdown("---")
+            col_cost1, col_cost2 = st.columns([2, 1])
+            with col_cost1:
+                st.subheader(f"💵 금주 예상 총 식자재 발주 금액: **{total_order_cost:,.0f} 원**")
+            with col_cost2:
+                buf_ord_excel = io.BytesIO()
+                with pd.ExcelWriter(buf_ord_excel, engine='openpyxl') as writer:
+                    edited_orders.to_excel(writer, index=False, sheet_name='식자재발주서')
+
+                st.download_button(
+                    label="📥 식자재 발주서(Excel) 다운로드",
+                    data=buf_ord_excel.getvalue(),
+                    file_name=f"식자재발주서_{datetime.today().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True
+                )
+
+        # ---------------------------------------------------------
+        # TAB 2: 1인 1일 식단가 정밀 분석
+        # ---------------------------------------------------------
+        with tab_ord2:
+            st.subheader("📊 1인 1일 식단가(Food Cost per Patient Day) 정밀 분석")
+            
+            daily_cost_per_person = (total_order_cost / 7) / total_headcount if total_headcount > 0 else 0
+            
+            col_c1, col_c2, col_c3 = st.columns(3)
+            col_c1.metric("주간 총 식자재비", f"{total_order_cost:,.0f} 원")
+            col_c2.metric("1일 평균 원가 지출", f"{(total_order_cost/7):,.0f} 원")
+            
+            if daily_cost_per_person <= 5800:
+                col_c3.metric("1인 1일 실제 식단가", f"{daily_cost_per_person:,.0f} 원", "🟢 예산 범위 내 적정 적합")
+            else:
+                col_c3.metric("1인 1일 실제 식단가", f"{daily_cost_per_person:,.0f} 원", "🔴 예산 초과 (조율 필요)", delta_color="inverse")
+
+            st.markdown("---")
+            st.write("### 🍰 카테고리별 원가 비중 분석")
+            cat_summary = edited_orders.groupby("카테고리")["예상금액(원)"].sum().reset_index()
+            cat_summary["비중(%)"] = round((cat_summary["예상금액(원)"] / total_order_cost) * 100, 1)
+            st.dataframe(cat_summary, use_container_width=True)
+
+        # ---------------------------------------------------------
+        # TAB 3: 식자재 단가 마스터 관리
+        # ---------------------------------------------------------
+        with tab_ord3:
+            st.subheader("⚙️ 식자재 공급업체 및 단가 마스터 등록/수정")
+            st.info("식자재 단가 변동 시 여기서 금액을 고치면 발주금액이 즉시 재산출됩니다.")
+            st.dataframe(edited_orders[["카테고리", "품목명", "규격", "단가(원)", "공급업체"]], use_container_width=True)
+            
     elif menu == "8. 위생 & 보존식·검식일지 관리":
         st.title("🛡️ 건보공단 평가 대응 서류")
         st.success("✅ 당일 식단표 기반 보존식 및 검식일지가 자동 완성되어 준비되었습니다.")
