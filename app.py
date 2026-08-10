@@ -823,6 +823,10 @@ else:
         st.caption("배식대 앞에서 퍼 담아야 할 주식/부식/김치 수량과 어르신별 특이사항을 1초 만에 확인하는 현장 맞춤형 서식입니다.")
         st.markdown("---")
 
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from openpyxl.utils import get_column_letter
+
         today_str = datetime.today().strftime('%Y-%m-%d')
         df_res = load_residents()
         df_daycare = load_daycare_attendance_by_date(today_str)
@@ -833,9 +837,7 @@ else:
         
         full_df = pd.concat([df_res, active_daycare[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]]], ignore_index=True)
 
-        # ---------------------------------------------------------
-        # 1. 식이 형태 정규화 엔진 (조리실 용어 표준화)
-        # ---------------------------------------------------------
+        # 1. 식이 정규화 (조리실 용어 표준화)
         import re
         def clean_meal_str(val):
             if not val or pd.isna(val): return "일반밥"
@@ -860,7 +862,7 @@ else:
             return s
 
         def clean_kimchi_str(val):
-            if not val or pd.isna(val): return "포기(일반) 빨간김치"
+            if not val or pd.isna(val): return "포기 빨간김치"
             s = str(val).strip()
             if "없" in s: return "김치 없음"
             is_white = "백" in s or "☆" in s or "♡" in s
@@ -877,75 +879,33 @@ else:
         full_df["부식"] = full_df["부식"].apply(clean_side_str)
         full_df["김치"] = full_df["김치"].apply(clean_kimchi_str)
 
-        # ---------------------------------------------------------
-        # 2. 상단 조리실 핵심 3대 메트릭 요약
-        # ---------------------------------------------------------
+        # 2. 메트릭 요약
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         col_m1.metric("오늘 총 배식 식수", f"{len(full_df)} 명", "요양원 + 주간보호")
-        col_m2.metric("밥/죽 비율", f"밥 {len(full_df[full_df['주식'].str.contains('밥')])} / 죽 {len(full_df[full_df['주식'].str.contains('죽|미음')])}", "공기/대접 세팅 기준")
-        col_m3.metric("다진찬/갈찬 수량", f"다진 {len(full_df[full_df['부식']=='다진찬'])} / 갈 {len(full_df[full_df['부식']=='갈찬'])}", "별도 분쇄 필요 식수")
-        col_m4.metric("백김치/특별김치", f"{len(full_df[full_df['김치'].str.contains('백|간|다진|없음')])} 명", "안매운 김치 준비 식수")
+        col_m2.metric("밥/죽 비율", f"밥 {len(full_df[full_df['주식'].str.contains('밥')])} / 죽 {len(full_df[full_df['주식'].str.contains('죽|미음')])}", "공기/대접 세팅")
+        col_m3.metric("다진찬/갈찬 수량", f"다진 {len(full_df[full_df['부식']=='다진찬'])} / 갈 {len(full_df[full_df['부식']=='갈찬'])}", "별도 분쇄 식수")
+        col_m4.metric("백김치/특별김치", f"{len(full_df[full_df['김치'].str.contains('백|간|다진|없음')])} 명", "특별 김치 준비")
 
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # 3. 층별 한눈에 보는 배식 수량 총괄 집계표 (주식/부식/김치)
-        # ---------------------------------------------------------
-        st.subheader("🍱 [1] 층별/배식대별 한눈에 보는 배식 총괄 집계표")
-        st.caption("조리원 선생님이 각 층으로 카트를 올리기 전 담아야 할 수량을 최종 확인하는 표입니다.")
-
-        pivot_all = pd.pivot_table(
-            full_df, 
-            index="층", 
-            columns=["주식"], 
-            values="성함", 
-            aggfunc="count", 
-            fill_value=0, 
-            margins=True, 
-            margins_name="합계"
-        )
-        
-        pivot_side = pd.pivot_table(
-            full_df, 
-            index="층", 
-            columns=["부식"], 
-            values="성함", 
-            aggfunc="count", 
-            fill_value=0, 
-            margins=True, 
-            margins_name="합계"
-        )
-
-        pivot_kimchi = pd.pivot_table(
-            full_df, 
-            index="층", 
-            columns=["김치"], 
-            values="성함", 
-            aggfunc="count", 
-            fill_value=0, 
-            margins=True, 
-            margins_name="합계"
-        )
+        # 3. 피벗 테이블 산출
+        pivot_meal = pd.pivot_table(full_df, index="층", columns="주식", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
+        pivot_side = pd.pivot_table(full_df, index="층", columns="부식", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
+        pivot_kimchi = pd.pivot_table(full_df, index="층", columns="김치", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
 
         col_t1, col_t2 = st.columns([1, 1])
         with col_t1:
-            st.write("#### 🍚 층별 주식(밥/죽) 퍼 담을 공기·대접 수")
-            st.dataframe(pivot_all, use_container_width=True)
-            st.write("#### 🥗 층별 부식(찬) 다진찬·갈찬 제공 수")
+            st.write("#### 🍚 층별 주식(밥/죽) 제공 수량 집계")
+            st.dataframe(pivot_meal, use_container_width=True)
+            st.write("#### 🥗 층별 부식(찬) 제공 수량 집계")
             st.dataframe(pivot_side, use_container_width=True)
-
         with col_t2:
-            st.write("#### 🥬 층별 김치 형태 세부 세팅 수")
+            st.write("#### 🥬 층별 김치 세부 형태 집계")
             st.dataframe(pivot_kimchi, use_container_width=True)
 
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # 4. ⚠️ 조리원 필수 확인 '개별 특이사항 주의 어르신' 명단
-        # ---------------------------------------------------------
-        st.subheader("⚠️ [2] 조리원 필수 확인! 개별 특이사항 배식 주의 명단")
-        st.caption("양 조절(밥 반공기 등), 다진찬, 갈찬, 김치 변경, 특이 식이가 지정된 어르신 명단입니다.")
-
+        # 4. 특이사항 주의 명단
         alert_df = full_df[
             (full_df["특이사항"] != "없음") & (full_df["특이사항"] != "") | 
             (full_df["부식"] != "일반찬") | 
@@ -953,57 +913,166 @@ else:
             (full_df["김치"].str.contains("백|간|다진|없음"))
         ].copy()
 
+        st.subheader("⚠️ [2] 조리원 필수 확인! 개별 특이사항 배식 주의 명단")
         if len(alert_df) > 0:
-            st.warning(f"🚨 총 **{len(alert_df)}명**의 어르신이 특별 맞춤 배식 대상입니다. (배식 전 특이사항을 꼭 확인하세요!)")
-            st.dataframe(
-                alert_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], 
-                use_container_width=True,
-                column_config={
-                    "특이사항": st.column_config.TextColumn("⚠️ 배식 주의 특이사항", help="양 조절 및 조리 지침")
-                }
-            )
-        else:
-            st.info("특이사항 대상 어르신이 없습니다.")
+            st.warning(f"🚨 총 **{len(alert_df)}명**의 어르신이 특별 맞춤 배식 대상입니다.")
+            st.dataframe(alert_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
 
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # 5. 실시간 검색 및 인쇄용 다운로드 구역
-        # ---------------------------------------------------------
+        # 5. 스타일링이 완벽 적용된 엑셀 다운로드 생성 함수
+        def generate_styled_excel(f_df, a_df, p_m, p_s, p_k, t_str):
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "조리실_배식지시서"
+            ws.views.sheetView[0].showGridLines = True
+
+            font_title = Font(name="맑은 고딕", size=16, bold=True, color="1B365D")
+            font_sub = Font(name="맑은 고딕", size=11, bold=True, color="1B365D")
+            font_header = Font(name="맑은 고딕", size=10, bold=True, color="FFFFFF")
+            font_body = Font(name="맑은 고딕", size=10)
+            font_bold = Font(name="맑은 고딕", size=10, bold=True)
+            font_alert = Font(name="맑은 고딕", size=10, bold=True, color="C00000")
+
+            fill_header_main = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
+            fill_header_sub = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            fill_total = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+            fill_alert = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+
+            thin_border = Border(
+                left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
+                top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
+            )
+
+            # 타이틀
+            ws.merge_cells("A1:G1")
+            ws["A1"] = f"👨‍🍳 연세노인전문요양원 조리실 배식지시서 ({t_str})"
+            ws["A1"].font = font_title
+            ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 35
+
+            curr_r = 3
+
+            def write_pivot(title, df, start_r, fill_style):
+                ws.cell(row=start_r, column=1, value=title).font = font_sub
+                r = start_r + 1
+                cols = ["층"] + list(df.columns)
+                for c_idx, c_name in enumerate(cols, start=1):
+                    cell = ws.cell(row=r, column=c_idx, value=str(c_name))
+                    cell.font = font_header
+                    cell.fill = fill_style
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = thin_border
+                ws.row_dimensions[r].height = 24
+                r += 1
+
+                for idx_val, row_data in df.iterrows():
+                    is_tot = (str(idx_val) == "합계")
+                    c_idx_cell = ws.cell(row=r, column=1, value=str(idx_val))
+                    c_idx_cell.font = font_bold if is_tot else font_body
+                    c_idx_cell.alignment = Alignment(horizontal="center", vertical="center")
+                    c_idx_cell.border = thin_border
+                    if is_tot: c_idx_cell.fill = fill_total
+
+                    for c_i, val in enumerate(row_data, start=2):
+                        col_h = df.columns[c_i-2]
+                        is_tot_col = (str(col_h) == "합계")
+                        c_v = ws.cell(row=r, column=c_i, value=int(val) if isinstance(val, (int, float)) else val)
+                        c_v.font = font_bold if (is_tot or is_tot_col) else font_body
+                        c_v.alignment = Alignment(horizontal="center", vertical="center")
+                        c_v.border = thin_border
+                        if is_tot or is_tot_col: c_v.fill = fill_total
+                    ws.row_dimensions[r].height = 20
+                    r += 1
+                return r
+
+            curr_r = write_pivot("🍚 [1] 층별 주식(밥/죽) 제공 수량 집계", p_m, curr_r, fill_header_main) + 1
+            curr_r = write_pivot("🥗 [2] 층별 부식(찬) 제공 수량 집계", p_s, curr_r, fill_header_sub) + 1
+            curr_r = write_pivot("🥬 [3] 층별 김치 세부 형태 집계", p_k, curr_r, fill_header_main) + 2
+
+            # 특이사항 표
+            ws.cell(row=curr_r, column=1, value="⚠️ [4] 조리원 필수 확인! 개별 특이사항 배식 주의 명단").font = font_sub
+            curr_r += 1
+            a_headers = ["층", "호실", "성함", "주식", "부식", "김치", "배식 주의 특이사항"]
+            for c_i, h in enumerate(a_headers, start=1):
+                c = ws.cell(row=curr_r, column=c_i, value=h)
+                c.font = font_header
+                c.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.border = thin_border
+            ws.row_dimensions[curr_r].height = 24
+            curr_r += 1
+
+            for _, r_d in a_df.iterrows():
+                for c_i, f in enumerate(["층", "호실", "성함", "주식", "부식", "김치", "특이사항"], start=1):
+                    c = ws.cell(row=curr_r, column=c_i, value=str(r_d[f]))
+                    c.font = font_alert if f == "특이사항" else font_body
+                    c.alignment = Alignment(horizontal="left" if f == "특이사항" else "center", vertical="center")
+                    c.border = thin_border
+                    c.fill = fill_alert
+                ws.row_dimensions[curr_r].height = 20
+                curr_r += 1
+            curr_r += 2
+
+            # 전체 명단
+            ws.cell(row=curr_r, column=1, value="📋 [5] 전체 수급자 통합 배식 명단").font = font_sub
+            curr_r += 1
+            f_headers = ["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]
+            for c_i, h in enumerate(f_headers, start=1):
+                c = ws.cell(row=curr_r, column=c_i, value=h)
+                c.font = font_header
+                c.fill = fill_header_main
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.border = thin_border
+            ws.row_dimensions[curr_r].height = 24
+            curr_r += 1
+
+            for _, r_d in f_df.iterrows():
+                for c_i, f in enumerate(f_headers, start=1):
+                    c = ws.cell(row=curr_r, column=c_i, value=str(r_d[f]))
+                    c.font = font_body
+                    c.alignment = Alignment(horizontal="left" if f == "특이사항" else "center", vertical="center")
+                    c.border = thin_border
+                ws.row_dimensions[curr_r].height = 20
+                curr_r += 1
+
+            # 열 너비 자동 조절
+            for col in ws.columns:
+                max_l = 0
+                col_l = get_column_letter(col[0].column)
+                for cell in col:
+                    if cell.value:
+                        k_l = len(str(cell.value).encode('utf-8'))
+                        if k_l > max_l: max_l = k_l
+                ws.column_dimensions[col_l].width = max(max_l * 0.95, 12)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            return buf.getvalue()
+
+        # 6. 검색 및 다운로드 버튼
         col_s1, col_s2 = st.columns([2, 1])
         with col_s1:
             st.subheader("🔍 [3] 어르신 성함/층수/특이사항 검색")
-            search_kw = st.text_input("검색어를 입력하세요 (예: 1층, 함명자, 밥 1/2, 연하, 백김치 등)", "")
+            search_kw = st.text_input("검색어 입력 (예: 1층, 함명자, 밥 1/2, 연하, 백김치 등)", "")
         with col_s2:
             st.write("")
             st.write("")
-            buf_print = io.BytesIO()
-            with pd.ExcelWriter(buf_print, engine='openpyxl') as writer:
-                pivot_all.to_excel(writer, sheet_name='주식집계표')
-                pivot_side.to_excel(writer, sheet_name='부식집계표')
-                pivot_kimchi.to_excel(writer, sheet_name='김치집계표')
-                full_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]].to_excel(writer, index=False, sheet_name='전체배식명단')
-                alert_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]].to_excel(writer, index=False, sheet_name='특이사항배식주의명단')
-            
+            excel_data = generate_styled_excel(full_df, alert_df, pivot_meal, pivot_side, pivot_kimchi, today_str)
             st.download_button(
                 label="🖨️ 조리실 벽면 부착용 배식지시서(Excel) 다운로드",
-                data=buf_print.getvalue(),
+                data=excel_data,
                 file_name=f"조리실_배식지시서_벽면부착용_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
                 use_container_width=True
             )
 
-        # 검색 필터링된 결과 표출
         if search_kw:
             filtered_df = full_df[
-                full_df["성함"].str.contains(search_kw) | 
-                full_df["층"].str.contains(search_kw) | 
-                full_df["호실"].str.contains(search_kw) | 
-                full_df["주식"].str.contains(search_kw) | 
-                full_df["부식"].str.contains(search_kw) | 
-                full_df["김치"].str.contains(search_kw) | 
-                full_df["특이사항"].str.contains(search_kw)
+                full_df["성함"].str.contains(search_kw) | full_df["층"].str.contains(search_kw) | 
+                full_df["주식"].str.contains(search_kw) | full_df["부식"].str.contains(search_kw) | 
+                full_df["김치"].str.contains(search_kw) | full_df["특이사항"].str.contains(search_kw)
             ]
             st.write(f"### 🔎 '{search_kw}' 검색 결과 (총 {len(filtered_df)}건)")
             st.dataframe(filtered_df[["층", "호실", "성함", "주식", "부식", "김치", "특이사항"]], use_container_width=True)
