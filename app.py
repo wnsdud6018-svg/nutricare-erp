@@ -663,6 +663,34 @@ else:
         st.markdown("---")
 
         col_date1, col_date2 = st.columns([1, 2])
+        # 주간보호 엑셀 파일 업로드 일괄 동기화 모듈
+        
+        with st.expander("📥 [실측 데이터] 4층 주간보호 어르신 엑셀 명단 DB 자동 동기화"):
+            up_dc_file = st.file_uploader("연세노인요양원 인원 및 특이사항.xlsx 파일을 올려주세요", type=["xlsx"], key="up_dc_excel")
+            if up_dc_file is not None and st.button("🚀 25명 주간보호 마스터 DB 일괄 저장/갱신", type="primary"):
+                df_dc_excel = pd.read_excel(up_dc_file, sheet_name="주간보호 인원수").dropna(subset=['이름'])
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("TRUNCATE TABLE daycare_master RESTART IDENTITY;") # 기존 임시 데이터 초기화
+                
+                for idx, row in df_dc_excel.iterrows():
+                    nm = str(row['이름']).strip()
+                    m = str(row['주식형태']).strip() if pd.notna(row['주식형태']) else '일반밥'
+                    s = str(row['반찬형태']).strip() if pd.notna(row['반찬형태']) else '일반찬'
+                    k = str(row['김치형태']).strip() if pd.notna(row['김치형태']) else '포기(일반) 빨간김치'
+                    nt = str(row['특이사항(양 조절 등)']).strip() if pd.notna(row['특이사항(양 조절 등)']) and str(row['특이사항(양 조절 등)']) != 'nan' else '없음'
+                    
+                    cursor.execute("""
+                        INSERT INTO daycare_master (name, meal, side, kimchi, note)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (nm, m, s, k, nt))
+                    
+                conn.commit()
+                conn.close()
+                st.cache_data.clear()
+                st.balloons()
+                st.success("🎉 4층 주간보호 어르신 25명의 마스터 데이터가 성공적으로 저장되었습니다!")
+                st.rerun()
         with col_date1:
             target_date = st.date_input("📅 출석 및 식사 작성 일자 선택", datetime.today())
             target_date_str = target_date.strftime('%Y-%m-%d')
