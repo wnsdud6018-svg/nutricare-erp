@@ -7,6 +7,7 @@ import zipfile
 import json
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
+from streamlit_cookies_manager import EncryptedCookieManager
 
 st.set_page_config(
     page_title="연세 효성 NutriCare ERP",
@@ -17,6 +18,10 @@ st.set_page_config(
 # ---------------------------------------------------------
 # 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 아이디/비밀번호 저장)
 # ---------------------------------------------------------
+cookies = EncryptedCookieManager(prefix="nutricare/", password=st.secrets["COOKIE_PASSWORD"])
+if not cookies.ready():
+    st.stop()
+
 USER_DB = {
     "nutrition": {"name": "영양실 (영양사)", "password": st.secrets["passwords"]["nutrition"], "role": "NUTRITION"},
     "daycare": {"name": "4층 주간보호 센터", "password": st.secrets["passwords"]["daycare"], "role": "DAYCARE"},
@@ -44,7 +49,9 @@ def login_screen():
                 if username in USER_DB and USER_DB[username]["password"] == password:
                     st.session_state["logged_in"] = True
                     st.session_state["user_info"] = USER_DB[username]
-                    
+                    cookies["login_id"] = username
+                    cookies.save()
+
                     if remember_id:
                         st.session_state["saved_username"] = username
                         st.session_state["saved_remember_id"] = True
@@ -424,6 +431,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
+    saved_login_id = cookies.get("login_id")
+    if saved_login_id in USER_DB:
+        st.session_state["logged_in"] = True
+        st.session_state["user_info"] = USER_DB[saved_login_id]
+
+if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
     login_screen()
 else:
     user = st.session_state["user_info"]
@@ -438,6 +451,8 @@ else:
 
     if st.sidebar.button("🔒 로그아웃", use_container_width=True):
         st.session_state["logged_in"] = False
+        cookies["login_id"] = ""
+        cookies.save()
         st.rerun()
 
     st.sidebar.markdown("---")
