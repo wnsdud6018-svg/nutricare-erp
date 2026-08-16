@@ -18,9 +18,9 @@ st.set_page_config(
 # 0. 보안 로그인 시스템 및 권한 정의 (RBAC & 아이디/비밀번호 저장)
 # ---------------------------------------------------------
 USER_DB = {
-    "nutrition": {"name": "영양실 (영양사)", "password": "1234", "role": "NUTRITION"},
-    "daycare": {"name": "4층 주간보호 센터", "password": "4444", "role": "DAYCARE"},
-    "admin": {"name": "시설장 (원장님)", "password": "7777", "role": "ADMIN"}
+    "nutrition": {"name": "영양실 (영양사)", "password": st.secrets["passwords"]["nutrition"], "role": "NUTRITION"},
+    "daycare": {"name": "4층 주간보호 센터", "password": st.secrets["passwords"]["daycare"], "role": "DAYCARE"},
+    "admin": {"name": "시설장 (원장님)", "password": st.secrets["passwords"]["admin"], "role": "ADMIN"}
 }
 
 def login_screen():
@@ -60,7 +60,7 @@ def login_screen():
 # ---------------------------------------------------------
 # 1. Database (Neon PostgreSQL) 클라우드 저장소 구축 및 초기화
 # ---------------------------------------------------------
-DATABASE_URL = "postgresql://neondb_owner:npg_z0aPSgEmhuy1@ep-delicate-fog-ayulfqc7-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
+DATABASE_URL = st.secrets["DATABASE_URL"]
 
 @st.cache_resource
 def get_db_engine():
@@ -1233,68 +1233,17 @@ else:
             )
 
         # ---------------------------------------------------------
-        # 화면 구성 (3개 탭)
+        # 다량 & 미량 영양소 적정성 자동 평가 (KDRI)
         # ---------------------------------------------------------
-        tab_excel, tab_cook, tab_nutrition = st.tabs([
-            "📂 [1] 엑셀 식단표·조리계획서 업로드 & 자동 매핑", 
-            "🍳 [2] 조리실 전용 실시간 조리계획서", 
-            "📊 [3] 영양 적정성 자동 평가 (KDRI)"
-        ])
-
-        with tab_excel:
-            st.subheader("📤 엑셀 주간식단표 업로드")
-            uploaded_excel = st.file_uploader("작성하신 주간 식단표 엑셀 파일(.xlsx)을 드래그해 올려주세요", type=["xlsx"])
-            
-            if uploaded_excel is not None:
-                if st.button("🚀 엑셀 데이터 분석 및 조리계획서 자동 연동 실행", type="primary", use_container_width=True):
-                    df_m_parsed, df_p_parsed = parse_weekly_excel_and_link(uploaded_excel)
-                    st.session_state["parsed_menu_df"] = df_m_parsed
-                    st.session_state["parsed_plan_df"] = df_p_parsed
-                    st.balloons()
-                    st.success(f"🎉 성공적으로 연동되었습니다! (식단 메뉴 {len(df_m_parsed)}건 & 조리재료 항목 {len(df_p_parsed)}건 분석 완료)")
-
-            st.markdown("---")
-            st.subheader("📋 현재 연동된 주간 식단표 명단")
-            if "parsed_menu_df" in st.session_state:
-                st.dataframe(st.session_state["parsed_menu_df"], use_container_width=True)
-            else:
-                st.info("상단에서 엑셀 파일(`08.10-08.16 주간식단표.xlsx`)을 업로드하시면 자동으로 식단표와 조리계획서가 연동됩니다.")
-
-        with tab_cook:
-            st.subheader("🍳 조리실 제출용 실시간 조리계획서 (자동 매핑 뷰)")
-            if "parsed_plan_df" in st.session_state:
-                col_sel1, col_sel2 = st.columns(2)
-                with col_sel1:
-                    sel_day = st.selectbox("📅 조회할 요일을 선택하세요", ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"])
-                with col_sel2:
-                    sel_meal = st.selectbox("🥣 끼니를 선택하세요", ["전체", "아침", "점심", "간식", "저녁"])
-
-                plan_df = st.session_state["parsed_plan_df"]
-                filtered_plan = plan_df[plan_df["요일"].str.contains(sel_day)]
-                if sel_meal != "전체":
-                    filtered_plan = filtered_plan[filtered_plan["끼니"] == sel_meal]
-
-                st.write(f"### 📋 [{sel_day}] [{sel_meal}] 조리실 상세 실행 계획서")
-                st.data_editor(filtered_plan[["끼니", "음식명", "재료명", "총량(kg)", "비고"]], use_container_width=True, num_rows="dynamic")
-            else:
-                st.info("📂 [1] 탭에서 엑셀 주간식단표 파일을 먼저 업로드해 주시면, 요일별/끼니별 재료명과 조리 비고가 자동으로 정렬되어 표출됩니다.")
-
-        with tab_nutrition:
-            st.subheader("📊 다량 & 미량 영양소 적정성 자동 평가")
-            edited_menu = st.data_editor(
-                st.session_state["weekly_menu"],
-                num_rows="dynamic",
-                use_container_width=True,
-                key="weekly_menu_editor"
-            )
-            st.session_state["weekly_menu"] = edited_menu
-
-            avg_cal = edited_menu["열량(kcal)"].mean() if "열량(kcal)" in edited_menu.columns else 1680
-            avg_prot = edited_menu["단백질(g)"].mean() if "단백질(g)" in edited_menu.columns else 68
-            
-            col_n1, col_n2 = st.columns(2)
-            col_n1.metric("1일 평균 열량", f"{avg_cal:.0f} kcal", "🟢 적정 (1,600~1,800)")
-            col_n2.metric("1일 평균 단백질", f"{avg_prot:.1f} g", "🟢 적정 (60g 이상 달성)")
+        st.markdown("---")
+        st.subheader("📊 다량 & 미량 영양소 적정성 자동 평가")
+        edited_menu = st.data_editor(
+            st.session_state["weekly_menu"],
+            num_rows="dynamic",
+            use_container_width=True,
+            key="weekly_menu_editor"
+        )
+        st.session_state["weekly_menu"] = edited_menu
 
         for col_chk, val_chk in [("열량(kcal)", 1680), ("단백질(g)", 68), ("나트륨(mg)", 1850), ("칼슘(mg)", 720), ("철분(mg)", 11.0), ("비타민A(㎍)", 650), ("비타민C(mg)", 105), ("식이섬유(g)", 22.0)]:
             if col_chk not in edited_menu.columns:
