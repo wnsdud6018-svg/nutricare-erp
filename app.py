@@ -119,6 +119,18 @@ def init_db():
     """)
     
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS daily_count_adjustment (
+            id SERIAL PRIMARY KEY,
+            adj_date TEXT NOT NULL,
+            category_type TEXT NOT NULL,
+            floor TEXT NOT NULL,
+            item TEXT NOT NULL,
+            count INTEGER NOT NULL,
+            UNIQUE (adj_date, category_type, floor, item)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS pending_approvals (
             id SERIAL PRIMARY KEY,
             requester TEXT NOT NULL,
@@ -232,6 +244,28 @@ def load_daycare_attendance_by_date(selected_date_str):
     df["석식"] = df["석식"].astype(bool)
     df["익일조식"] = df["익일조식"].astype(bool)
     return df
+
+def load_count_adjustments(date_str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT category_type, floor, item, count FROM daily_count_adjustment WHERE adj_date=%s", (date_str,))
+    rows = cursor.fetchall()
+    conn.close()
+    adj = {}
+    for cat, floor, item, count in rows:
+        adj.setdefault(cat, {})[(floor, item)] = count
+    return adj
+
+def save_count_adjustment(date_str, category_type, floor, item, count):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO daily_count_adjustment (adj_date, category_type, floor, item, count)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (adj_date, category_type, floor, item) DO UPDATE SET count = EXCLUDED.count
+    """, (date_str, category_type, floor, item, count))
+    conn.commit()
+    conn.close()
 
 def get_pending_approvals_count():
     conn = get_db_connection()
@@ -879,29 +913,79 @@ else:
         full_df["부식"] = full_df["부식"].apply(clean_side_str)
         full_df["김치"] = full_df["김치"].apply(clean_kimchi_str)
 
-        # 2. 메트릭 요약
+        # 2. 층별/카테고리별 원본 집계 (조정 전)
+        MEAL_COLS = ["일반밥", "잡곡밥", "일반죽", "호박죽", "야채죽", "미음", "금식"]
+        SIDE_COLS = ["일반찬", "다진찬", "갈찬"]
+        KIMCHI_COLS = ["포기 빨간김치", "포기 백김치", "다진 빨간김치", "다진 백김치", "간 빨간김치", "간 백김치", "김치 없음"]
+        FLOOR_ROWS = ["1층", "2층", "3층", "4층 (주간보호)"]
+
+        def build_count_grid(df, col_name, canonical_cols):
+            raw = pd.pivot_table(df, index="층", columns=col_name, values="성함", aggfunc="count", fill_value=0)
+            all_cols = list(dict.fromkeys(canonical_cols + list(raw.columns)))
+            all_rows = list(dict.fromkeys(FLOOR_ROWS + list(raw.index)))
+            return raw.reindex(index=all_rows, columns=all_cols, fill_value=0).astype(int)
+
+        adjustments = load_count_adjustments(today_str)
+
+        def apply_adjustments(grid, category_type):
+            grid = grid.copy()
+            for (floor, item), val in adjustments.get(category_type, {}).items():
+                if floor in grid.index and item in grid.columns:
+                    grid.loc[floor, item] = val
+            return grid
+
+        grid_meal = apply_adjustments(build_count_grid(full_df, "주식", MEAL_COLS), "주식")
+        grid_side = apply_adjustments(build_count_grid(full_df, "부식", SIDE_COLS), "부식")
+        grid_kimchi = apply_adjustments(build_count_grid(full_df, "김치", KIMCHI_COLS), "김치")
+
+        # 3. 메트릭 요약 (조정값 반영)
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        col_m1.metric("오늘 총 배식 식수", f"{len(full_df)} 명", "요양원 + 주간보호")
-        col_m2.metric("밥/죽 비율", f"밥 {len(full_df[full_df['주식'].str.contains('밥')])} / 죽 {len(full_df[full_df['주식'].str.contains('죽|미음')])}", "공기/대접 세팅")
-        col_m3.metric("다진찬/갈찬 수량", f"다진 {len(full_df[full_df['부식']=='다진찬'])} / 갈 {len(full_df[full_df['부식']=='갈찬'])}", "별도 분쇄 식수")
-        col_m4.metric("백김치/특별김치", f"{len(full_df[full_df['김치'].str.contains('백|간|다진|없음')])} 명", "특별 김치 준비")
+        col_m1.metric("오늘 총 배식 식수", f"{int(grid_meal.values.sum())} 명", "요양원 + 주간보호")
+        bap_cnt = int(grid_meal[[c for c in grid_meal.columns if "밥" in c]].values.sum())
+        juk_cnt = int(grid_meal[[c for c in grid_meal.columns if ("죽" in c or "미음" in c)]].values.sum())
+        col_m2.metric("밥/죽 비율", f"밥 {bap_cnt} / 죽 {juk_cnt}", "공기/대접 세팅")
+        col_m3.metric("다진찬/갈찬 수량", f"다진 {int(grid_side.get('다진찬', pd.Series(dtype=int)).sum())} / 갈 {int(grid_side.get('갈찬', pd.Series(dtype=int)).sum())}", "별도 분쇄 식수")
+        special_kimchi_cols = [c for c in grid_kimchi.columns if ("백" in c or "간" in c or "다진" in c or "없음" in c)]
+        col_m4.metric("백김치/특별김치", f"{int(grid_kimchi[special_kimchi_cols].values.sum())} 명", "특별 김치 준비")
 
         st.markdown("---")
 
-        # 3. 피벗 테이블 산출
-        pivot_meal = pd.pivot_table(full_df, index="층", columns="주식", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
-        pivot_side = pd.pivot_table(full_df, index="층", columns="부식", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
-        pivot_kimchi = pd.pivot_table(full_df, index="층", columns="김치", values="성함", aggfunc="count", fill_value=0, margins=True, margins_name="합계")
+        # 4. 편집 가능한 식수 조정표 (직접 수정하면 즉시 DB에 저장되어 조리실 출력물에도 반영됨)
+        st.info("💡 숫자 칸을 더블클릭해서 직접 수정하면 즉시 저장되고, 조리실 출력용 엑셀에도 바로 반영됩니다. (예: 결식/추가 인원 반영)")
 
         col_t1, col_t2 = st.columns([1, 1])
         with col_t1:
             st.write("#### 🍚 층별 주식(밥/죽) 제공 수량 집계")
-            st.dataframe(pivot_meal, use_container_width=True)
+            edited_meal = st.data_editor(grid_meal, use_container_width=True, key=f"edit_meal_{today_str}")
             st.write("#### 🥗 층별 부식(찬) 제공 수량 집계")
-            st.dataframe(pivot_side, use_container_width=True)
+            edited_side = st.data_editor(grid_side, use_container_width=True, key=f"edit_side_{today_str}")
         with col_t2:
             st.write("#### 🥬 층별 김치 세부 형태 집계")
-            st.dataframe(pivot_kimchi, use_container_width=True)
+            edited_kimchi = st.data_editor(grid_kimchi, use_container_width=True, key=f"edit_kimchi_{today_str}")
+
+        changed = False
+        for edited_grid, base_grid, cat in [(edited_meal, grid_meal, "주식"), (edited_side, grid_side, "부식"), (edited_kimchi, grid_kimchi, "김치")]:
+            for floor in edited_grid.index:
+                for item in edited_grid.columns:
+                    new_val = int(edited_grid.loc[floor, item])
+                    if new_val < 0:
+                        new_val = 0
+                    if new_val != int(base_grid.loc[floor, item]):
+                        save_count_adjustment(today_str, cat, floor, item, new_val)
+                        changed = True
+        if changed:
+            st.rerun()
+
+        # 5. 합계 포함된 최종 집계 (화면 표시 + 엑셀 출력용)
+        def with_totals(grid):
+            g = grid.copy()
+            g["합계"] = g.sum(axis=1)
+            g.loc["합계"] = g.sum(axis=0)
+            return g
+
+        pivot_meal = with_totals(edited_meal)
+        pivot_side = with_totals(edited_side)
+        pivot_kimchi = with_totals(edited_kimchi)
 
         st.markdown("---")
 
